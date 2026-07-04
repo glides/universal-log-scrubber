@@ -12,7 +12,7 @@
 RootModule = 'UniversalLogScrubber.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.0.0'
+ModuleVersion = '1.0.2'
 
 # Supported PSEditions
 CompatiblePSEditions = 'Desktop', 'Core'
@@ -116,7 +116,7 @@ PrivateData = @{
         # IconUri = ''
 
         # ReleaseNotes of this module
-        ReleaseNotes = 'v1.0.0 provides deterministic local token-map discovery, CSharp hot-path discovery/scrubbing/event conversion, compact in-memory progress, Intune diagnostics tuning, safe upload bundles, and maintainer release packaging.'
+        ReleaseNotes = 'v1.0.2 provides deterministic local token-map discovery, CSharp hot-path discovery/scrubbing/event conversion, compact in-memory progress, Intune diagnostics tuning, safe upload bundles, and maintainer release packaging.'
 
         # Prerelease string of this module
         # Prerelease = ''

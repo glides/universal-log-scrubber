@@ -1,6 +1,6 @@
 # Universal Log Scrubber Usage Guide
 
-This guide covers the public `1.0.0` workflow for running Universal Log Scrubber against files, folders, diagnostic bundles, and common enterprise log exports.
+This guide covers the public `1.0.2` workflow for running Universal Log Scrubber against files, folders, diagnostic bundles, and common enterprise log exports.
 
 ## 1. Basic command pattern
 

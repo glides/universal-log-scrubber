@@ -49,7 +49,7 @@ jobs:
 
           $module = Get-Module UniversalLogScrubber
           if (-not $module) { throw 'UniversalLogScrubber module did not import.' }
-          if ($module.Version -ne [version]'1.0.0') {
+          if ($module.Version -ne [version]'1.0.2') {
             throw "Unexpected module version: $($module.Version)"
           }
 

@@ -75,7 +75,7 @@
 # REGION: Session state (shared by every stage)
 # =====================================================================
 $script:ModuleName       = 'UniversalLogScrubber'
-$script:ModuleVersion    = '1.0.0'
+$script:ModuleVersion    = '1.0.2'
 $script:Salt             = $null
 $script:HmacLength       = 24
 $script:TokenByNorm      = @{}     # normalized-value -> token (the loaded map)
@@ -2109,6 +2109,14 @@ function Test-UlsFileNameLikeDnsValue {
     return ($v -match '(?i)^[A-Za-z0-9_.-]+\.(?:cer|crt|crl|pem|p7b|p7c)$')
 }
 
+function Test-UlsWindowsServiceOrDriverName {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    $v = $Value.Trim().Trim('"', "'", '.', ',', ';', ':', ')', ']', '}')
+    if ($v.Length -gt 48 -or $v -match '\s|\\') { return $false }
+    return ($v -match '(?i)^(?:Wof|CldFlt|WIMMount|WdFilter|FileCrypt|UCPD|luafv|applockerfltr|npsvctrig|bfs|storahci|stornvme|storqosflt|wcifs|bindflt|MsSecFlt|acpiapic|iaStor[A-Za-z0-9]*|nvlddmkm|Netwtw|rt640x64|igdkmdn64|ACPI|Tcpip|Dnscache|WinDefend|BITS|W32Time|EventLog|Schedule|Spooler|WaaSMedic|WaaSMedicSvc|MoUsoCoreWorker|UsoSvc|UsoClient|AppXSvc)$')
+}
+
 function Test-UlsShouldMapDiscoveredIdentifier {
     param(
         [string]$Raw,
@@ -2126,9 +2134,11 @@ function Test-UlsShouldMapDiscoveredIdentifier {
         if (Test-UlsBenignPlaceholderValue -Value $v) { return $false }
         if ($Prefix -eq 'MAC' -and (Test-UlsHashAsMacValue -Value $v)) { return $false }
         if ($Prefix -eq 'DNS' -and (Test-UlsFileNameLikeDnsValue -Value $v)) { return $false }
+        if ($Prefix -eq 'COMPUTER' -and (Test-UlsWindowsServiceOrDriverName -Value $v)) { return $false }
         if ($Prefix -eq 'PRINCIPAL' -and ((Test-UlsLongNaturalLanguagePrincipalNoise -Value $v) -or (Test-UlsLogonBannerTitleValue -Value $v) -or (Test-UlsRelativeDiagnosticBackslashPathValue -Value $v) -or (Test-UlsEncodedGuidCnFragmentValue -Value $v) -or (Test-UlsHighEntropyDotZeroPrincipalNoise -Value $v) -or (Test-UlsBenignUriPrincipalValue -Value $v))) { return $false }
         if (Test-UlsWellKnownSid -Value $v) { return $false }
         if (Test-UlsWellKnownWindowsPrincipal -Value $v) { return $false }
+        if ($Prefix -eq 'PRINCIPAL' -and $v -match '(?i)^[A-Za-z0-9_.-]{2,64}\\defaultuser\d*$') { return $false }
         if ($Prefix -eq 'DNS' -and (Test-WindowsDiagnosticDottedName -Value $v) -and $v -notmatch '(?i)\.(local|lan|corp|internal|intranet|home|test)$') { return $false }
         if ($Prefix -eq 'PRINCIPAL' -and (Test-WindowsPathLikeDomainUser -Value $v -Text '' -Index -1 -Length 0)) { return $false }
         if ($Prefix -eq 'URI' -and (Test-UlsDiagnosticPathOnlyUri -Value $v)) { return $false }
@@ -2417,6 +2427,7 @@ function New-ScrubTokenMap {
         if ($v -match '^(?<domain>[A-Za-z0-9_.-]{2,64})\\(?<user>[A-Za-z0-9_.\-$]{2,80})$') {
             $dom = $matches['domain']
             $usr = $matches['user']
+            if ($usr -match '(?i)^defaultuser\d*$') { return $n }
             $looksLikeRealPrincipal = (
                 ($dom -cmatch '^[A-Z0-9.-]{2,32}$' -and $usr -cmatch '[a-z]' -and $usr -notmatch '(?i)\.(?:db|js|crx|txt|log|xml|json|csv)$') -or
                 ($usr.EndsWith('$') -and $dom -cmatch '^[A-Z0-9.-]{2,32}$')
@@ -3839,7 +3850,8 @@ function Test-UlsWellKnownWindowsPrincipal {
     if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
     $v = ([string]$Value).Trim().Trim('"', "'", '.', ',', ';', ':', '}', ']', ')')
     return (
-        $v -match '(?i)^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|LocalSystem|LocalService|NetworkService|ANONYMOUS LOGON|Everyone|Authenticated Users|Users|Administrators|Administrator|Guest|Guests|DefaultAccount|WDAGUtilityAccount|DWM-\d+|UMFD-\d+|Registry|LOCAL|localhost|%%\d+)$' -or
+        $v -match '(?i)^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|LocalSystem|LocalService|NetworkService|ANONYMOUS LOGON|Everyone|Authenticated Users|Users|Administrators|Administrator|Guest|Guests|DefaultAccount|defaultuser\d*|WDAGUtilityAccount|DWM-\d+|UMFD-\d+|Registry|LOCAL|localhost|%%\d+)$' -or
+        $v -match '(?i)^(Remote Management Users|System Managed Accounts Group|Event Log Readers|IIS_IUSRS|Distributed COM Users|Performance Log Users|Performance Monitor Users|Device Owners|Hyper-V Administrators)$' -or
         $v -match '(?i)^(NT AUTHORITY|BUILTIN|WORKGROUP|Window Manager|Font Driver Host)$' -or
         $v -match '(?i)^(NT AUTHORITY|BUILTIN|Window Manager|Font Driver Host)\\'
     )
@@ -5312,10 +5324,12 @@ public sealed class UlsDiscoveryEngine
     {
         if (String.IsNullOrWhiteSpace(value)) return false;
         string v = CleanValue(value);
-        return Regex.IsMatch(v, @"^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|LocalSystem|LocalService|NetworkService|ANONYMOUS LOGON|Everyone|Authenticated Users|Users|Administrators|Administrator|Guest|Guests|DefaultAccount|defaultuser0|WDAGUtilityAccount|DWM-\d+|UMFD-\d+|Registry|LOCAL|localhost|%%\d+|WaaSMedic|WaaSMedicSvc|MoUsoCoreWorker|UsoClient|svchost\.exe,AppXSvc)$", RegexOptions.IgnoreCase)
+        return Regex.IsMatch(v, @"^(SYSTEM|LOCAL SERVICE|NETWORK SERVICE|LocalSystem|LocalService|NetworkService|ANONYMOUS LOGON|Everyone|Authenticated Users|Users|Administrators|Administrator|Guest|Guests|DefaultAccount|defaultuser\d*|WDAGUtilityAccount|DWM-\d+|UMFD-\d+|Registry|LOCAL|localhost|%%\d+|WaaSMedic|WaaSMedicSvc|MoUsoCoreWorker|UsoClient|svchost\.exe,AppXSvc)$", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(v, @"^(Remote Management Users|System Managed Accounts Group|Event Log Readers|IIS_IUSRS|Distributed COM Users|Performance Log Users|Performance Monitor Users|Device Owners|Hyper-V Administrators)$", RegexOptions.IgnoreCase)
             || Regex.IsMatch(v, @"^(NT AUTHORITY|BUILTIN|WORKGROUP|Window Manager|Font Driver Host)$", RegexOptions.IgnoreCase)
             || Regex.IsMatch(v, @"^(NT AUTHORITY|BUILTIN|Window Manager|Font Driver Host)\\", RegexOptions.IgnoreCase)
-            || Regex.IsMatch(v, @"^(?:WORKGROUP|NT AUTHORITY|BUILTIN)\\(?:SYSTEM|LOCAL SERVICE|NETWORK SERVICE|Administrators|Users|Guest|Guests)$", RegexOptions.IgnoreCase);
+            || Regex.IsMatch(v, @"^(?:WORKGROUP|NT AUTHORITY|BUILTIN)\\(?:SYSTEM|LOCAL SERVICE|NETWORK SERVICE|Administrators|Users|Guest|Guests)$", RegexOptions.IgnoreCase)
+            || Regex.IsMatch(v, @"^[A-Za-z0-9_.-]{2,64}\\defaultuser\d*$", RegexOptions.IgnoreCase);
     }
 
     private bool IsAllowedDomain(string value)
@@ -5487,7 +5501,7 @@ public sealed class UlsDiscoveryEngine
         if (String.IsNullOrWhiteSpace(value)) return false;
         string v = CleanValue(value);
         if (v.Length > 48 || v.IndexOf(' ') >= 0 || v.IndexOf('\\') >= 0) return false;
-        return Regex.IsMatch(v, @"(?i)^(?:Wof|CldFlt|WIMMount|WdFilter|FileCrypt|UCPD|luafv|applockerfltr|npsvctrig|bfs|storahci|stornvme|storqosflt|wcifs|bindflt|MsSecFlt|acpiapic|iaStor|nvlddmkm|Netwtw|rt640x64|igdkmdn64|ACPI|Tcpip|Dnscache|WinDefend|BITS|W32Time|EventLog|Schedule|Spooler|WaaSMedic|WaaSMedicSvc|MoUsoCoreWorker|UsoSvc|UsoClient|AppXSvc)$");
+        return Regex.IsMatch(v, @"(?i)^(?:Wof|CldFlt|WIMMount|WdFilter|FileCrypt|UCPD|luafv|applockerfltr|npsvctrig|bfs|storahci|stornvme|storqosflt|wcifs|bindflt|MsSecFlt|acpiapic|iaStor[A-Za-z0-9]*|nvlddmkm|Netwtw|rt640x64|igdkmdn64|ACPI|Tcpip|Dnscache|WinDefend|BITS|W32Time|EventLog|Schedule|Spooler|WaaSMedic|WaaSMedicSvc|MoUsoCoreWorker|UsoSvc|UsoClient|AppXSvc)$");
     }
 
     private static bool IsWindowsServicingNoiseIdentifier(string value, string context)
@@ -6321,7 +6335,7 @@ public sealed class UlsDiscoveryEngine
             {
                 string value = CleanValue(m.Groups["value"].Value);
                 if (String.IsNullOrWhiteSpace(value) || value == "-" || IsLowSignalValue(value)) continue;
-                string prefix = (value.IndexOf("@", StringComparison.Ordinal) >= 0 || value.IndexOf("%40", StringComparison.OrdinalIgnoreCase) >= 0 || value.IndexOf('.', StringComparison.Ordinal) >= 0) ? "PRINCIPAL" : "OBJECT";
+                string prefix = (value.IndexOf("@", StringComparison.Ordinal) >= 0 || value.IndexOf("%40", StringComparison.OrdinalIgnoreCase) >= 0 || value.IndexOf('.') >= 0) ? "PRINCIPAL" : "OBJECT";
                 AddIdentifier(rows, value, prefix, source, sourcePathHash, "user/account API path");
             }
         }

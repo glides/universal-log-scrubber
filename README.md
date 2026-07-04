@@ -1,10 +1,20 @@
-# Universal Log Scrubber
+# Universal Log Scrubber v1.0.2
 
 **Share the logs, not the exposure.**
 
 Universal Log Scrubber is a local-first PowerShell module for preparing logs, diagnostic bundles, exports, and evidence files before they are shared with vendors, outside reviewers, support teams, or analysis tools.
 
 It replaces sensitive values with deterministic typed tokens while keeping the surrounding log structure readable. This lets reviewers follow events, counts, timelines, users, devices, and relationships without receiving the original identifiers.
+
+## Latest updates
+
+**v1.0.2** is a public maintenance release focused on compatibility and safer high-volume diagnostic workflows.
+
+- Improved Windows PowerShell 5.1 compatibility while retaining PowerShell 7 support.
+- Improved Windows Event log readability by preserving common built-in Windows groups, setup/OOBE placeholder accounts, and known Windows driver/service names.
+- Improved correlation for repeated users, devices, hostnames, SIDs, MAC addresses, and cloud/device identifiers across converted event text and large diagnostic bundles.
+- Improved map-based scrubbing consistency for large converted event outputs and diagnostic packages.
+- Added status timestamps to console progress messages for easier review of long-running jobs.
 
 ## What it helps protect
 
