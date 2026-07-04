@@ -1,0 +1,63 @@
+{
+  "Name": "Microsoft Entra SigninLogs Extension",
+  "Description": "Additive extension for IdentityProvider runs against exported SigninLogs CSV/JSON. Handles nested JSON values stored in CSV fields.",
+  "AllowedDomains": [
+    "microsoft.com",
+    "microsoftonline.com",
+    "windows.net"
+  ],
+  "WholeColumnRules": [
+    {
+      "Regex": "(?i)^(UserPrincipalName|Identity)$",
+      "Prefix": "PRINCIPAL",
+      "SplitOn": "[;,|]"
+    },
+    {
+      "Regex": "(?i)^(IPAddress|GlobalSecureAccessIpAddress|IPAddressFromResourceProvider)$",
+      "Prefix": "IP",
+      "SplitOn": "[;,|]"
+    },
+    {
+      "Regex": "(?i)^(HomeTenantId|HomeTenantName|ServicePrincipalId|ServicePrincipalName|OriginalRequestId|CorrelationId|Id)$",
+      "Prefix": "OBJECT",
+      "SplitOn": "[;,|]"
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "EntraDeviceAndTenantLabels",
+      "Labels": [
+        "deviceId",
+        "displayName",
+        "HomeTenantId",
+        "HomeTenantName",
+        "ServicePrincipalId",
+        "ServicePrincipalName",
+        "OriginalRequestId",
+        "CorrelationId"
+      ],
+      "Prefix": "OBJECT"
+    },
+    {
+      "Name": "EntraNetworkLabels",
+      "Labels": [
+        "IPAddress",
+        "GlobalSecureAccessIpAddress",
+        "IPAddressFromResourceProvider"
+      ],
+      "Prefix": "IP"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "EncodedLoginHint",
+      "Regex": "(?i)(login_hint=)([^&\\s]+)",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "login_hint="
+      ],
+      "Entropy": 0
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "SchemaVersion": 2,
+  "Name": "WebAccessExample",
+  "Description": "Web access and proxy logs. Use Csv format for parsed exports and Text for raw access lines.",
+  "Format": "Auto",
+  "DenyByDefault": true,
+  "SchemaColumns": [
+    { "Regex": "(?i)^(date|time|method|status|sc-status|bytes|time-taken)$", "Action": "PassThrough" },
+    { "Regex": "(?i)^(uri|url|cs-uri-stem|cs-uri-query|referer|user-agent|message)$", "Action": "Scan" }
+  ],
+  "WholeColumnRules": [
+    { "Regex": "(?i)^(c-ip|clientip|src_ip|remote_addr|x-forwarded-for)$", "Prefix": "IP", "SplitOn": "[,; ]+" },
+    { "Regex": "(?i)^(cs-username|username|user|authenticated_user)$", "Prefix": "PRINCIPAL" },
+    { "Regex": "(?i)^(host|hostname|cs-host|server|upstream_host)$", "Prefix": "DNS" }
+  ],
+  "LabelRules": [
+    { "Name": "ProxyUserLabels", "Labels": [ "user", "username", "authenticated_user" ], "Prefix": "PRINCIPAL" },
+    { "Name": "ProxyAddressLabels", "Labels": [ "client_ip", "src_ip", "x-forwarded-for", "remote_addr" ], "Prefix": "IP" },
+    { "Name": "ProxyHostLabels", "Labels": [ "host", "upstream_host", "server" ], "Prefix": "DNS" }
+  ],
+  "Allowlist": [
+    { "Exact": [ "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS" ] },
+    { "Regex": "^(200|201|204|301|302|304|400|401|403|404|500|502|503)$" }
+  ],
+  "SeedFiles": [ "seed.example.txt" ],
+  "AllowlistFile": [ "allowlist.example.txt" ]
+}

@@ -1,0 +1,40 @@
+{
+  "SchemaVersion": 2,
+  "Name": "CsvSchemaExample",
+  "Description": "Schema-driven CSV profile for operational exports.",
+  "Format": "Csv",
+  "Delimiter": ",",
+  "DenyByDefault": true,
+  "SchemaColumns": [
+    { "Exact": "Timestamp", "Action": "PassThrough", "Description": "Analytical timestamp." },
+    { "Exact": "Status", "Action": "PassThrough", "Description": "Non-sensitive status text." },
+    { "Wildcard": "*Message*", "Action": "Scan", "Description": "Scan message-like columns as free text." },
+    { "Wildcard": "*Details*", "Action": "Scan", "Description": "Scan detail payload columns as free text." }
+  ],
+  "WholeColumnRules": [
+    { "Exact": "UserID", "Prefix": "PRINCIPAL", "Description": "Whole user identifier column." },
+    { "Exact": "UserName", "Prefix": "PRINCIPAL" },
+    { "Regex": "(?i)^(machine|host|server|device|node)$", "Prefix": "DNS" },
+    { "Regex": "(?i)^(clientip|src_ip|dst_ip|ipaddress)$", "Prefix": "IP", "SplitOn": "[;,|]" },
+    { "Regex": "(?i)(api[_ -]?key|token|secret|password)", "Prefix": "SECRET" }
+  ],
+  "LabelRules": [
+    { "Name": "CsvInlineSecrets", "Labels": [ "API Key", "api_key", "client_secret", "password" ], "Prefix": "SECRET" },
+    { "Name": "CsvInlineIdentity", "Labels": [ "username", "user", "account", "principal" ], "Prefix": "PRINCIPAL" },
+    { "Name": "CsvInlineHost", "Labels": [ "host", "server", "machine", "device" ], "Prefix": "DNS" },
+    { "Name": "CsvInlineAddress", "Labels": [ "src_ip", "dst_ip", "client_ip", "source address" ], "Prefix": "IP" }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "LocalTicketId",
+      "Regex": "(?i)\\b(ticket[_ -]?id\\s*[:=]\\s*)(TKT-[0-9]{6})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [ "ticket", "TKT-" ],
+      "Entropy": 0,
+      "Description": "Example local ticket number."
+    }
+  ],
+  "SeedFiles": [ "seed.example.txt" ],
+  "AllowlistFile": [ "allowlist.example.txt" ]
+}

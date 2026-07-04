@@ -1,0 +1,71 @@
+{
+  "Name": "AWS CloudTrail High-Signal Extension",
+  "Description": "Additive extension for CloudAudit/Generic runs against AWS CloudTrail JSON/JSONL. Scrubs AWS account/ARN/session/access-key shapes while preserving AWS service domains.",
+  "AllowedDomains": [
+    "amazonaws.com",
+    "aws.amazon.com"
+  ],
+  "LabelRules": [
+    {
+      "Name": "AWSIdentityLabels",
+      "Labels": [
+        "arn",
+        "principalId",
+        "accessKeyId",
+        "userName",
+        "roleArn",
+        "sourceIPAddress",
+        "requestID",
+        "eventID",
+        "sharedEventID"
+      ],
+      "Prefix": "OBJECT"
+    },
+    {
+      "Name": "AWSUserLabels",
+      "Labels": [
+        "userName",
+        "principalId"
+      ],
+      "Prefix": "PRINCIPAL"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "AwsAccessKeyId",
+      "Regex": "\\b(AKIA|ASIA)[A-Z0-9]{16,24}\\b",
+      "CaptureGroup": 0,
+      "Prefix": "SECRET",
+      "Keywords": [
+        "AKIA",
+        "ASIA"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "AwsArnUserRoleSession",
+      "Regex": "\\barn:aws[a-zA-Z-]*:[^\\s,\"]+",
+      "CaptureGroup": 0,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "arn:aws"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "AwsAccountIdNearArn",
+      "Regex": "(?i)(arn:aws[^:]*:[^:]*:[^:]*:)([0-9]{12})(:)",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "arn:aws"
+      ],
+      "Entropy": 0
+    }
+  ],
+  "Allowlist": [
+    "AWS Internal",
+    "AWSServiceRoleFor",
+    "amazonaws.com"
+  ]
+}

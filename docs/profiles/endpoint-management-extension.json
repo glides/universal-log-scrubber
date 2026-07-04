@@ -1,0 +1,96 @@
+{
+  "Name": "EndpointManagementExtension",
+  "Description": "Additive overlay for Nexthink, SCCM/MECM, and Intune exports with local endpoint ownership, collection, and asset fields.",
+  "Allowlist": [
+    "compliant",
+    "noncompliant",
+    "success",
+    "failed",
+    "installed",
+    "pending"
+  ],
+  "SchemaColumns": [
+    {
+      "Regex": "(?i)^(status|state|compliance(state)?|platform|os|osversion|version)$",
+      "Action": "PassThrough",
+      "Description": "Operational state and platform fields."
+    },
+    {
+      "Wildcard": "*message*",
+      "Action": "Scan",
+      "Description": "Messages can include users, hosts, paths, and private IPs."
+    },
+    {
+      "Wildcard": "*description*",
+      "Action": "Scan",
+      "Description": "Descriptions can include local endpoint context."
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Regex": "(?i)^(local_asset|asset_tag|assetid|serialnumber|device_serial|endpoint_id)$",
+      "Prefix": "COMPUTER",
+      "Description": "Local endpoint and asset identifiers."
+    },
+    {
+      "Regex": "(?i)^(owner|primary_user|assigned_user|userprincipalname|upn|last_logged_on_user)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Endpoint owner and user identity fields."
+    },
+    {
+      "Regex": "(?i)^(device_name|devicename|computername|hostname|name0)$",
+      "Prefix": "COMPUTER",
+      "Description": "Endpoint host names."
+    },
+    {
+      "Regex": "(?i)^(collection_name|collectionname|deployment_ring|device_group|pilot_group)$",
+      "Prefix": "GROUP",
+      "Description": "Local endpoint groups can expose organization structure."
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "EndpointUsers",
+      "Labels": [
+        "primary user",
+        "assigned user",
+        "last logged on user",
+        "owner"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "EndpointDevices",
+      "Labels": [
+        "device name",
+        "computer name",
+        "hostname",
+        "asset tag"
+      ],
+      "Prefix": "COMPUTER"
+    },
+    {
+      "Name": "EndpointGroups",
+      "Labels": [
+        "collection name",
+        "deployment ring",
+        "device group",
+        "pilot group"
+      ],
+      "Prefix": "GROUP"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "RemoteActionTicket",
+      "Regex": "(?i)\\b(remote action ticket\\s*[:=]\\s*)(RA-[0-9]{4,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "remote action ticket",
+        "RA-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+name: Documentation improvement
+description: Suggest a clarification, example, recipe, or wiki improvement.
+title: "Docs: "
+labels: [documentation]
+body:
+  - type: textarea
+    id: page
+    attributes:
+      label: Page or section
+      description: Where is the confusing or missing documentation?
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What should be improved?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or example

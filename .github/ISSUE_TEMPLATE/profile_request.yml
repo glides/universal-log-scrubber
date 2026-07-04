@@ -1,0 +1,38 @@
+name: Profile or detector request
+description: Request support for a log format, detector, or BYOP rule pattern.
+title: "Profile request: "
+labels: [enhancement, profile]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic examples only. Do not paste raw customer or production logs.
+  - type: input
+    id: log_type
+    attributes:
+      label: Log type or product family
+      placeholder: e.g. VPN gateway, cloud audit, app JSON, firewall, proxy
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Synthetic sample lines
+      description: Include 5-10 representative synthetic lines.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: sensitive
+    attributes:
+      label: Values that should be tokenized
+      placeholder: usernames, hosts, private IPs, tenant names, API keys, local IDs...
+  - type: textarea
+    id: preserve
+    attributes:
+      label: Values that should stay readable
+      placeholder: timestamps, status codes, methods, public domains, health checks...
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes

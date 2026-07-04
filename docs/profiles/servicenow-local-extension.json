@@ -1,0 +1,97 @@
+{
+  "Name": "ServiceNowLocalExtension",
+  "Description": "Additive overlay for local ServiceNow fields such as asset tags, requester aliases, vendor cases, and custom notes.",
+  "SchemaColumns": [
+    {
+      "Wildcard": "*notes*",
+      "Action": "Scan",
+      "Description": "Free-text notes often contain identities, hosts, IPs, and local ticket context."
+    },
+    {
+      "Wildcard": "*comment*",
+      "Action": "Scan",
+      "Description": "Comments are scanned as free text instead of passed through."
+    },
+    {
+      "Wildcard": "*description*",
+      "Action": "Scan",
+      "Description": "Descriptions can contain pasted diagnostics and local identifiers."
+    },
+    {
+      "Regex": "(?i)^(state|priority|impact|urgency)$",
+      "Action": "PassThrough",
+      "Description": "Operational workflow values are useful for analysis."
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Regex": "(?i)^(u_)?(asset_tag|local_asset|endpoint_id|cmdb_serial|device_serial)$",
+      "Prefix": "COMPUTER",
+      "Description": "Local endpoint identifiers."
+    },
+    {
+      "Regex": "(?i)^(u_)?(requested_for_alias|business_owner|approver_upn|opened_by_alias)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Local requester and approver aliases."
+    },
+    {
+      "Regex": "(?i)^(u_)?(vendor_contact|third_party_user)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Partner or vendor identities."
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "ServiceNowLocalUsers",
+      "Labels": [
+        "affected user",
+        "requester alias",
+        "business owner",
+        "approver"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "ServiceNowLocalDevices",
+      "Labels": [
+        "affected host",
+        "endpoint",
+        "asset tag"
+      ],
+      "Prefix": "COMPUTER"
+    },
+    {
+      "Name": "ServiceNowLocalObjects",
+      "Labels": [
+        "vendor case",
+        "vendor ticket",
+        "local case"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "VendorCaseId",
+      "Regex": "(?i)\\b(vendor(?: ticket| case)?\\s*[:=]\\s*)(VND-[A-Z0-9-]{5,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "vendor",
+        "VND-"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "LocalAssetId",
+      "Regex": "(?i)\\b(asset(?: tag| id)?\\s*[:=]\\s*)(ASSET-[A-Z0-9-]{4,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "COMPUTER",
+      "Keywords": [
+        "asset",
+        "ASSET-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+2026-05-09T15:30:01Z level=INFO event=request user=cal.derosa tenant="Northstar Research Group" host=gw-cobalt-01.internal.example src_ip=10.12.44.9 dst_ip=10.90.4.20 method=POST path=/v1/claims status=200 trace_id=TRC-9142-FEAA
+2026-05-09T15:30:12Z level=WARN event=rate_limit user=meena.shah tenant="Keystone Tenant" host=gw-cobalt-01.internal.example src_ip=172.16.9.22 method=POST path=/v1/search status=429 api_key=key_marigold_94c2b11877
+2026-05-09T15:31:03Z level=ERROR event=upstream_error service=svc-ledger-sync host=ledger-amber-02.internal.example src_ip=10.12.44.11 dst_ip=10.90.8.15 conn="Server=tcp:sql-orchid-04.internal.example;User ID=svc_ledger;Password=sample-secret-7788"
+2026-05-09T15:31:48Z level=INFO event=admin_action user=orion.pike role=OpsMaintainer host=admin-violet-02.internal.example src_ip=10.12.44.12 action=restart target=worker-orchid-07 reason="Orchid Relay queue stalled"
+2026-05-09T15:32:20Z level=WARN event=device_posture user=selah.ng device=LT-RIVER-7742 host=gw-cobalt-02.internal.example src_ip=192.168.66.24 posture=stale serial=SN-RV7-4419
+2026-05-09T15:33:05Z level=INFO event=public_probe user=healthcheck host=public.example.com src_ip=127.0.0.1 method=GET path=/health status=200
+2026-05-09T15:34:16Z level=ERROR event=auth_header service=svc-asterops host=api-slate-03.internal.example src_ip=10.12.44.13 authorization="Bearer sample.eyJhbGciOiJIUzI1NiJ9.payload.signature" request_id=REQ-GW-7701
+2026-05-09T15:35:49Z level=WARN event=tenant_route user=iris.monte tenant="HarborBridge" host=gw-cobalt-03.internal.example src_ip=10.16.7.29 dst_host=claims-harbor-02.internal.example msg="tenant route crossed expected boundary"
+2026-05-09T15:36:11Z level=INFO event=cache user=system host=cache-pearl-01.internal.example src_ip=10.12.44.14 key=build-4912 status=hit
+2026-05-09T15:37:42Z level=ERROR event=local_id user=quinn.rosales host=gw-cobalt-02.internal.example src_ip=10.12.44.15 case_id=CASE-884221 asset_id=ASSET-LT44-X9Q2 msg="Riverglass Pilot export failed"

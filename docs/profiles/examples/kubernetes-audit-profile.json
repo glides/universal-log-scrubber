@@ -1,0 +1,113 @@
+{
+  "SchemaVersion": 2,
+  "Name": "Kubernetes-Audit-Custom",
+  "Description": "Full BYOP JSON profile for Kubernetes audit log JSONL. Scrubs users, source IPs, request object secrets, object IDs, and request URIs while preserving stable Kubernetes vocabulary.",
+  "Format": "Json",
+  "DenyByDefault": true,
+  "AllowedDomains": [
+    "kubernetes.io",
+    "k8s.io"
+  ],
+  "SchemaColumns": [
+    {
+      "Wildcard": "*timestamp*",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "verb",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "stage",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "level",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "requestURI",
+      "Action": "Scan"
+    },
+    {
+      "Exact": "annotations",
+      "Action": "Scan"
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "K8sUsers",
+      "Labels": [
+        "username",
+        "uid",
+        "email",
+        "groups",
+        "sessionName"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "K8sNetwork",
+      "Labels": [
+        "sourceIPs",
+        "sourceIP",
+        "clientIP"
+      ],
+      "Prefix": "IP"
+    },
+    {
+      "Name": "K8sObjectIds",
+      "Labels": [
+        "auditID",
+        "objectRef",
+        "uid",
+        "name",
+        "namespace"
+      ],
+      "Prefix": "OBJECT"
+    },
+    {
+      "Name": "K8sSecretData",
+      "Labels": [
+        "stringData",
+        "data",
+        "apiKey",
+        "token",
+        "password",
+        "secret"
+      ],
+      "Prefix": "SECRET"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "K8sSecretApiKey",
+      "Regex": "(?i)(apiKey[\"']?\\s*[:=]\\s*[\"']?)([^\"',}\\s]+)",
+      "CaptureGroup": 2,
+      "Prefix": "SECRET",
+      "Keywords": [
+        "apiKey"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "K8sUserInRbacReason",
+      "Regex": "(?i)(User\\s+[\"'])([^\"']+)([\"'])",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "User"
+      ],
+      "Entropy": 0
+    }
+  ],
+  "Allowlist": [
+    "system:authenticated",
+    "system:serviceaccounts",
+    "kube-system",
+    "ResponseComplete",
+    "RequestReceived",
+    "Metadata",
+    "RequestResponse"
+  ]
+}

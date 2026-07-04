@@ -1,0 +1,110 @@
+name: Self Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  scrubber-self-test:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Import module and validate public command surface
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
+
+          $requiredCommands = @(
+            'Invoke-UniversalScrubber',
+            'Test-LogFormat',
+            'New-ScrubTokenMap',
+            'Import-ScrubTokenMap',
+            'Get-ScrubProfile',
+            'New-ScrubProfileTemplate',
+            'New-ScrubProfileFromSample',
+            'Test-ScrubProfile',
+            'Import-ScrubProfileExtensionFile',
+            'New-SyntheticLog'
+          )
+
+          foreach ($command in $requiredCommands) {
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
+              throw "Expected public command was not exported: $command"
+            }
+          }
+
+          foreach ($removedCommand in @('Invoke-ScrubSelfTest', 'Invoke-ULSScrubSelfTest')) {
+            if (Get-Command $removedCommand -ErrorAction SilentlyContinue) {
+              throw "Removed test command should not be exported: $removedCommand"
+            }
+          }
+
+          $module = Get-Module UniversalLogScrubber
+          if (-not $module) { throw 'UniversalLogScrubber module did not import.' }
+          if ($module.Version -ne [version]'1.0.0') {
+            throw "Unexpected module version: $($module.Version)"
+          }
+
+      - name: Validate example profiles and extensions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
+
+          $profileRoots = @(
+            '.\docs\profiles',
+            '.\samples\profiles'
+          ) | Where-Object { Test-Path -LiteralPath $_ }
+
+          $profiles = @($profileRoots | ForEach-Object {
+            Get-ChildItem -LiteralPath $_ -Filter '*.json' -File -Recurse
+          })
+
+          if ($profiles.Count -eq 0) {
+            Write-Host 'No example profile JSON files found to validate.'
+            return
+          }
+
+          $fullProfileCount = 0
+          $extensionCount = 0
+
+          foreach ($profile in $profiles) {
+            $json = Get-Content -LiteralPath $profile.FullName -Raw | ConvertFrom-Json
+            $propertyNames = @($json.PSObject.Properties.Name)
+
+            if ($propertyNames -contains 'Format') {
+              $fullProfileCount++
+              if (-not (Test-ScrubProfile -Path $profile.FullName -Quiet)) {
+                throw "Profile failed validation: $($profile.FullName)"
+              }
+            } else {
+              $extensionCount++
+              [void](Import-ScrubProfileExtensionFile -Path $profile.FullName)
+            }
+          }
+
+          Write-Host "Validated $fullProfileCount full profile file(s) and $extensionCount profile extension file(s)."
+
+      - name: Run sample log smoke tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\scripts\Test-SampleLogs.ps1
+
+      - name: Upload smoke-test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrubber-smoke-test-diagnostics
+          path: |
+            samples/out/smoke-test/**/scrub_run_manifest.json
+            samples/out/smoke-test/**/generated-*-profile.json
+          if-no-files-found: ignore

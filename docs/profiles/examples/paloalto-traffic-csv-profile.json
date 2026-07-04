@@ -1,0 +1,80 @@
+{
+  "SchemaVersion": 2,
+  "Name": "PaloAlto-Traffic-Csv-Custom",
+  "Description": "Full BYOP CSV profile for PAN-OS traffic log exports. Targets source/destination addresses, users, hostnames, device identifiers, UUIDs, session IDs, and HIP tags.",
+  "Format": "Csv",
+  "Delimiter": ",",
+  "DenyByDefault": false,
+  "WholeColumnRules": [
+    {
+      "Exact": "Source address",
+      "Prefix": "IP"
+    },
+    {
+      "Exact": "Destination address",
+      "Prefix": "IP"
+    },
+    {
+      "Exact": "NAT Source IP",
+      "Prefix": "IP"
+    },
+    {
+      "Exact": "NAT Destination IP",
+      "Prefix": "IP"
+    },
+    {
+      "Exact": "Source User",
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Exact": "Destination User",
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Exact": "Source Hostname",
+      "Prefix": "DNS"
+    },
+    {
+      "Exact": "Destination Hostname",
+      "Prefix": "DNS"
+    },
+    {
+      "Exact": "Device Name",
+      "Prefix": "COMPUTER"
+    },
+    {
+      "Exact": "Source UUID",
+      "Prefix": "OBJECT"
+    },
+    {
+      "Exact": "Destination UUID",
+      "Prefix": "OBJECT"
+    },
+    {
+      "Exact": "Session ID",
+      "Prefix": "OBJECT"
+    },
+    {
+      "Exact": "Monitor Tag/IMEI",
+      "Prefix": "MAC"
+    }
+  ],
+  "SchemaColumns": [
+    {
+      "Exact": "Rule",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "Application",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "URL Category",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "Action",
+      "Action": "PassThrough"
+    }
+  ]
+}

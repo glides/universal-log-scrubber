@@ -1,0 +1,10 @@
+# One allowlist item per line.
+# Plain text means exact value. Prefix with regex: for a regular expression.
+# Prefix with domain: to preserve that domain and its subdomains.
+127.0.0.1
+::1
+public.example.com
+domain:microsoft.com
+domain:example.org
+regex:^(health|ready|live)$
+regex:^build-[0-9]+$

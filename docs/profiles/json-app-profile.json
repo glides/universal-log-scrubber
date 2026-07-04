@@ -1,0 +1,32 @@
+{
+  "SchemaVersion": 2,
+  "Name": "JsonAppExample",
+  "Description": "Application JSON or NDJSON logs. JSON keys are preserved; values are scrubbed.",
+  "Format": "Json",
+  "DenyByDefault": true,
+  "SchemaColumns": [],
+  "WholeColumnRules": [],
+  "LabelRules": [
+    { "Name": "JsonIdentityLabels", "Labels": [ "username", "user", "actor", "principal", "subject" ], "Prefix": "PRINCIPAL" },
+    { "Name": "JsonHostLabels", "Labels": [ "host", "hostname", "server", "node", "pod", "container" ], "Prefix": "DNS" },
+    { "Name": "JsonAddressLabels", "Labels": [ "ip", "src_ip", "dst_ip", "client_ip", "remote_addr" ], "Prefix": "IP" },
+    { "Name": "JsonSecretLabels", "Labels": [ "api_key", "apikey", "access_token", "refresh_token", "client_secret", "password" ], "Prefix": "SECRET" },
+    { "Name": "JsonTenantLabels", "Labels": [ "tenant", "tenantId", "organization", "org" ], "Prefix": "X500" }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "ExampleSessionToken",
+      "Regex": "(?i)\\b(session[_ -]?token\"?\\s*[:=]\\s*\"?)([A-Za-z0-9_-]{24,})",
+      "CaptureGroup": 2,
+      "Prefix": "SECRET",
+      "Keywords": [ "session", "token" ],
+      "Entropy": 3.2
+    }
+  ],
+  "Allowlist": [
+    { "Exact": [ "127.0.0.1", "::1", "public.example.com" ] },
+    { "Regex": "^(health|ready|live)$" }
+  ],
+  "SeedFiles": [ "seed.example.txt" ],
+  "AllowlistFile": [ "allowlist.example.txt" ]
+}

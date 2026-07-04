@@ -1,0 +1,26 @@
+{
+  "SchemaVersion": 2,
+  "Name": "KeyValueLogExample",
+  "Description": "key=value, logfmt, CEF, LEEF, and similar label-heavy logs.",
+  "Format": "Kv",
+  "DenyByDefault": true,
+  "LabelRules": [
+    { "Name": "KvPrincipals", "Labels": [ "user", "username", "suser", "duser", "account", "principal" ], "Prefix": "PRINCIPAL" },
+    { "Name": "KvHosts", "Labels": [ "host", "hostname", "dhost", "shost", "device", "node" ], "Prefix": "DNS" },
+    { "Name": "KvAddresses", "Labels": [ "src", "dst", "src_ip", "dst_ip", "client_ip", "remote_addr" ], "Prefix": "IP" },
+    { "Name": "KvSecrets", "Labels": [ "api_key", "token", "secret", "password", "authorization" ], "Prefix": "SECRET" },
+    { "Name": "KvTenant", "Labels": [ "tenant", "tenantId", "org", "realm" ], "Prefix": "X500" }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "LocalCorrelationId",
+      "Regex": "(?i)\\b(correlation[_-]?id=)(corr-[A-F0-9]{16})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [ "correlation", "corr-" ],
+      "Entropy": 0
+    }
+  ],
+  "SeedFiles": [ "seed.example.txt" ],
+  "AllowlistFile": [ "allowlist.example.txt" ]
+}

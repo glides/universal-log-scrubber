@@ -1,0 +1,56 @@
+{
+  "Name": "ExampleLocalExtension",
+  "Description": "Additive BYOP overlay for local ticket, asset, and vendor fields.",
+  "Allowlist": [
+    "public.example.com"
+  ],
+  "SchemaColumns": [
+    {
+      "Exact": "Status",
+      "Action": "PassThrough",
+      "Description": "Operational state, not an identity."
+    },
+    {
+      "Wildcard": "*notes*",
+      "Action": "Scan",
+      "Description": "Free-text notes often contain names, hosts, IPs, and ticket context."
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Exact": "AssetTag",
+      "Prefix": "COMPUTER",
+      "Description": "Local asset identifiers."
+    },
+    {
+      "Regex": "(?i)^(owner|requested_by|affected_user)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Local user fields."
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "LocalTicketLabels",
+      "Labels": [
+        "asset owner",
+        "device owner",
+        "affected host",
+        "private ip"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "LocalCaseId",
+      "Regex": "(?i)\\b(case id\\s*[:=]\\s*)(CASE-[0-9]+)\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "case id",
+        "CASE-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

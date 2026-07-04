@@ -1,0 +1,10 @@
+2026-06-01T03:01:14Z fw-edge-02 NOTICE VPN_LOGIN user=veda.morris@northstar.example group=FieldOps assigned_ip=10.240.18.77 public_ip=203.0.113.41 device=LT-FIELD-4412 policy=Northstar-Field-Allow
+2026-06-01T03:04:39Z fw-edge-02 WARN VPN_MFA_RETRY user=ronan.quill@northstar.example assigned_ip=10.240.18.80 public_ip=198.51.100.19 factor=push attempts=3
+2026-06-01T03:05:02Z fw-core-01 DENY src=10.240.18.80 dst=10.90.10.25 dhost=db-onyx-03.internal.example app=mssql user=ronan.quill reason=policy-denied rule=Blue-Lantern-DB-Block
+2026-06-01T03:07:26Z fw-core-01 ALLOW src=10.240.18.77 dst=10.90.4.20 dhost=claims-api-02.internal.example app=https user=veda.morris bytes=18422
+2026-06-01T03:09:43Z fw-edge-03 NOTICE VPN_LOGIN user=svc-tunnel-watch assigned_ip=10.240.19.12 public_ip=192.0.2.88 device=SRV-ASTER-01 policy=AsterOps-Service
+2026-06-01T03:11:05Z fw-core-01 WARN IDS_SIG src=10.240.19.12 dst=10.90.4.31 signature="Suspicious Authorization Header" url=https://api-ember-09.internal.example/v1/token
+2026-06-01T03:12:38Z fw-edge-02 INFO HEARTBEAT src=127.0.0.1 dst=127.0.0.1 status=ready
+2026-06-01T03:14:50Z fw-core-02 DENY src=172.17.22.9 dst=10.90.7.44 dhost=files-river-02.internal.example user=maris.flynn@contractor.example.net reason=geo-policy
+2026-06-01T03:16:07Z fw-edge-02 WARN VPN_SPLIT_TUNNEL user=tomas.aker@northstar.example public_ip=203.0.113.49 domain=private-northstar.example route=Riverglass Pilot
+2026-06-01T03:18:31Z fw-core-01 ALLOW src=10.240.18.77 dst=93.184.216.34 dhost=example.com app=https user=veda.morris bytes=928

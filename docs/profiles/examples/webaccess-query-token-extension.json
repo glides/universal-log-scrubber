@@ -1,0 +1,59 @@
+{
+  "Name": "WebAccess Query Token Extension",
+  "Description": "Additive extension for WebAccess/Apache/IIS logs. Scrubs common query-string identity and secret parameters inside URLs/referrers while leaving status/method/path context readable.",
+  "LabelRules": [
+    {
+      "Name": "QueryIdentityLabels",
+      "Labels": [
+        "user",
+        "email",
+        "login_hint",
+        "upn",
+        "account",
+        "session",
+        "sid",
+        "request_id",
+        "trace_id"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "QuerySecretLabels",
+      "Labels": [
+        "token",
+        "access_token",
+        "id_token",
+        "refresh_token",
+        "code",
+        "state",
+        "jwt",
+        "api_key",
+        "signature"
+      ],
+      "Prefix": "SECRET"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "SensitiveQueryParameter",
+      "Regex": "(?i)([?&](?:access_token|id_token|refresh_token|api_key|token|session|sid|code|state|jwt|signature|login_hint|email|upn)=)([^&\\s\"]+)",
+      "CaptureGroup": 2,
+      "Prefix": "SECRET",
+      "Keywords": [
+        "access_token",
+        "login_hint",
+        "api_key",
+        "session="
+      ],
+      "Entropy": 0
+    }
+  ],
+  "Allowlist": [
+    "Mozilla",
+    "Chrome",
+    "Safari",
+    "Edge",
+    "curl",
+    "okhttp"
+  ]
+}

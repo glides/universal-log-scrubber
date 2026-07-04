@@ -1,0 +1,8 @@
+graph.microsoft.com
+login.microsoftonline.com
+signin.amazonaws.com
+iam.amazonaws.com
+s3.amazonaws.com
+kubernetes.io
+microsoft.com
+amazonaws.com

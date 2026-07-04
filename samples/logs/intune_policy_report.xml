@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<DiagnosticReport>
+  <Provider>DeviceManagement-Enterprise-Diagnostics-Provider</Provider>
+  <PolicyManager>
+    <PolicyName>Endpoint Security Baseline</PolicyName>
+    <State>Compliant</State>
+    <User>june.park@northstar.example</User>
+    <DeviceName>WS-HR-1180</DeviceName>
+    <AzureADDeviceId>6a88a1b1-200f-4b73-827a-ff6108713333</AzureADDeviceId>
+    <IPAddress>10.240.18.79</IPAddress>
+    <RegistryPath>HKLM\SOFTWARE\Microsoft\Enrollments\{6A88A1B1-200F-4B73-827A-FF6108713333}</RegistryPath>
+  </PolicyManager>
+</DiagnosticReport>

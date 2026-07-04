@@ -1,0 +1,120 @@
+{
+  "Name": "SecurityAuditExtension",
+  "Description": "Additive overlay for identity audit, Sentinel/cloud audit, EDR, and XDR alert exports with local tenant, queue, incident, and entity labels.",
+  "SchemaColumns": [
+    {
+      "Wildcard": "*detail*",
+      "Action": "Scan",
+      "Description": "Details fields often contain nested entities or copied alert text."
+    },
+    {
+      "Wildcard": "*evidence*",
+      "Action": "Scan",
+      "Description": "Evidence fields can contain hosts, users, paths, URLs, and IPs."
+    },
+    {
+      "Wildcard": "*entity*",
+      "Action": "Scan",
+      "Description": "Entity fields should be scanned as free text."
+    },
+    {
+      "Regex": "(?i)^(severity|status|operation|action|category|result)$",
+      "Action": "PassThrough",
+      "Description": "Operational classification values are useful for analysis."
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Regex": "(?i)^(actor(\\.upn|_upn)?|target(\\.upn|_upn)?|userprincipalname|user_id|account_name|initiatedby)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Actor and target identity fields."
+    },
+    {
+      "Regex": "(?i)^(device(name)?|host(name)?|computer(name)?|endpoint(name)?)$",
+      "Prefix": "COMPUTER",
+      "Description": "Endpoint and host entity fields."
+    },
+    {
+      "Regex": "(?i)^(clientip|sourceip|src_ip|destinationip|dst_ip|remote_ip)$",
+      "Prefix": "IP",
+      "SplitOn": "[;,|]",
+      "Description": "Network address fields."
+    },
+    {
+      "Regex": "(?i)^(tenant(alias|name)?|workspace|queue|ownerqueue|analystqueue)$",
+      "Prefix": "OBJECT",
+      "Description": "Local tenant, workspace, and queue names."
+    },
+    {
+      "Regex": "(?i)(token|secret|apikey|session|refresh)",
+      "Prefix": "SECRET",
+      "Description": "Secret-like audit fields."
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "AuditPrincipals",
+      "Labels": [
+        "actor",
+        "target user",
+        "initiated by",
+        "account"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "AuditEntities",
+      "Labels": [
+        "device",
+        "host",
+        "endpoint",
+        "workstation"
+      ],
+      "Prefix": "COMPUTER"
+    },
+    {
+      "Name": "AuditNetwork",
+      "Labels": [
+        "source ip",
+        "destination ip",
+        "client ip",
+        "remote ip"
+      ],
+      "Prefix": "IP"
+    },
+    {
+      "Name": "AuditLocalObjects",
+      "Labels": [
+        "tenant alias",
+        "workspace",
+        "analyst queue",
+        "owner queue"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "LocalIncidentId",
+      "Regex": "(?i)\\b(incident(?: id| number)?\\s*[:=]\\s*)(INC-[0-9]{5,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "incident",
+        "INC-"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "LocalAlertId",
+      "Regex": "(?i)\\b(alert(?: id)?\\s*[:=]\\s*)(ALERT-[A-Z0-9-]{5,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "alert",
+        "ALERT-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

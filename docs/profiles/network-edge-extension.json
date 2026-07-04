@@ -1,0 +1,127 @@
+{
+  "Name": "NetworkEdgeExtension",
+  "Description": "Additive overlay for firewall, proxy, VPN, gateway, and network edge exports with local labels and identifiers.",
+  "Allowlist": [
+    "allow",
+    "deny",
+    "blocked",
+    "accepted",
+    "tcp",
+    "udp",
+    "icmp",
+    "http",
+    "https"
+  ],
+  "SchemaColumns": [
+    {
+      "Regex": "(?i)^(action|status|method|protocol|proto|port|rule_action)$",
+      "Action": "PassThrough",
+      "Description": "Network classification fields are usually analytical."
+    },
+    {
+      "Wildcard": "*message*",
+      "Action": "Scan",
+      "Description": "Message fields can contain users, hosts, IPs, URLs, and local policy text."
+    },
+    {
+      "Wildcard": "*detail*",
+      "Action": "Scan",
+      "Description": "Detail fields should be scanned as free text."
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Regex": "(?i)^(src_user|dst_user|user|username|vpn_user|authenticated_user)$",
+      "Prefix": "PRINCIPAL",
+      "Description": "Network user identity fields."
+    },
+    {
+      "Regex": "(?i)^(src_host|dst_host|host|hostname|gateway|collector|vpn_gateway)$",
+      "Prefix": "DNS",
+      "Description": "Network host and gateway names."
+    },
+    {
+      "Regex": "(?i)^(src_ip|dst_ip|sourceip|destinationip|clientip|assigned_ip|private_ip)$",
+      "Prefix": "IP",
+      "SplitOn": "[;,|]",
+      "Description": "Network address fields."
+    },
+    {
+      "Regex": "(?i)^(tunnel_id|session_id|policy_owner|gateway_id)$",
+      "Prefix": "OBJECT",
+      "Description": "Local tunnel, session, and policy identifiers."
+    },
+    {
+      "Regex": "(?i)(token|secret|password|pre_shared|psk)",
+      "Prefix": "SECRET",
+      "Description": "Secret-like gateway fields."
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "NetworkPrincipals",
+      "Labels": [
+        "src_user",
+        "dst_user",
+        "vpn user",
+        "authenticated user"
+      ],
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Name": "NetworkHosts",
+      "Labels": [
+        "src_host",
+        "dst_host",
+        "gateway",
+        "vpn gateway"
+      ],
+      "Prefix": "DNS"
+    },
+    {
+      "Name": "NetworkAddresses",
+      "Labels": [
+        "src_ip",
+        "dst_ip",
+        "client ip",
+        "assigned ip",
+        "private ip"
+      ],
+      "Prefix": "IP"
+    },
+    {
+      "Name": "NetworkObjects",
+      "Labels": [
+        "tunnel id",
+        "session id",
+        "policy owner",
+        "gateway id"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "TunnelId",
+      "Regex": "(?i)\\b(tunnel(?: id)?\\s*[:=]\\s*)(TUN-[A-Z0-9-]{4,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "tunnel",
+        "TUN-"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "GatewayId",
+      "Regex": "(?i)\\b(gateway(?: id)?\\s*[:=]\\s*)(GW-[A-Z0-9-]{4,})\\b",
+      "CaptureGroup": 2,
+      "Prefix": "OBJECT",
+      "Keywords": [
+        "gateway",
+        "GW-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

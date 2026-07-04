@@ -1,0 +1,8 @@
+# One seed term per line.
+# Use this for shapeless sensitive terms that patterns cannot infer:
+# organization names, client names, project names, tenant display names,
+# vendor nicknames, internal product names, and recurring host prefixes.
+ExampleCorp
+ProjectFalcon
+LegacyVendorName
+internal-product-code

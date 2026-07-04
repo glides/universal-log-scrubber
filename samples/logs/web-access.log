@@ -1,0 +1,10 @@
+10.44.18.27 - naomi.rivera [14/Mar/2026:08:10:02 +0000] "GET /health HTTP/1.1" 200 118 "-" "Mozilla/5.0" host=public.example.com request_id=WEB-10001
+172.22.9.81 - eliot.park [14/Mar/2026:08:11:44 +0000] "POST /api/session HTTP/1.1" 200 842 "https://portal.northstar.example/login" "Edge/121.0" host=portal-saffron-01.internal.example
+10.90.4.23 - svc-aurora-sync [14/Mar/2026:08:12:18 +0000] "POST /api/claims/write HTTP/1.1" 403 64 "-" "python-requests/2.31" host=billing-api-07.internal.example token=sk-test-marigold-7a9b2c3d4e5f
+10.44.18.30 - mira.vale [14/Mar/2026:08:13:08 +0000] "POST /admin/reset HTTP/1.1" 202 301 "https://admin.northstar.example" "Mozilla/5.0" host=admin-onyx-01.internal.example ticket=TKT-481203
+192.168.77.45 - tam.lin [14/Mar/2026:08:13:54 +0000] "GET /reports/export HTTP/1.1" 302 0 "-" "curl/8.4" host=reports-moss-05.internal.example tenant="Blue Lantern"
+10.51.0.14 - svc-orchid-relay [14/Mar/2026:08:15:19 +0000] "PUT /connectors/orchid/token HTTP/1.1" 200 44 "-" "OrchidRelay/4.2" host=worker-orchid-03.internal.example
+10.51.0.22 - jules.kwon [14/Mar/2026:08:16:40 +0000] "GET /ready HTTP/1.1" 200 15 "-" "HealthBot" host=cache-cedar-02.internal.example build=build-4912
+172.22.9.91 - avery.stone [14/Mar/2026:08:18:01 +0000] "POST /roles/elevate HTTP/1.1" 403 91 "-" "Mozilla/5.0" host=admin-onyx-01.internal.example role=GlobalSupportAdmin
+10.44.18.39 - seren.cho [14/Mar/2026:08:19:12 +0000] "GET /download/claims/export_20260314.csv HTTP/1.1" 200 88321 "-" "Mozilla/5.0" host=reports-moss-05.internal.example
+10.90.4.31 - svc-reporting [14/Mar/2026:08:20:33 +0000] "POST /v1/token/validate HTTP/1.1" 401 55 "-" "ReportRunner/9.1" host=api-ember-09.internal.example auth="Bearer sample.jwt.payload"

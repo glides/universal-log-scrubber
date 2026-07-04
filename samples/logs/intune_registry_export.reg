@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Enrollments\{6A88A1B1-200F-4B73-827A-FF6108711111}]
+"UPN"="veda.morris@northstar.example"
+"Provider"="DeviceManagement-Enterprise-Diagnostics-Provider"
+"TenantId"="40a81d9a-7872-4a2a-91e3-02e2d85143a4"
+"DeviceName"="LT-FIELD-4412"
+"SerialNumber"="NS-100000"
+"PolicyManager"="MDM policy source"
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\S-1-5-21-1111111111-2222222222-3333333333-1001]
+"ProfileImagePath"="C:\\Users\\veda.morris"
+"State"=dword:00000000

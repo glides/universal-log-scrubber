@@ -1,0 +1,80 @@
+# Private scrubber artifacts
+
+*DO_NOT_UPLOAD*
+scrub_token_map*.csv
+scrub_run_manifest.json
+*detection_review*.csv
+*detection_report*.csv
+*detection_summary*.csv
+*false_positive*.csv
+scrubber-error.txt
+sample_json.jsonl.copy
+*salt*
+
+# Raw or generated logs
+
+*.evtx
+*.etl
+*.log
+*.w3c
+*.xlsx
+*_scrubbed.csv
+*.evtx.csv
+output/
+outputs/
+scrubbed/
+converted/
+logs/
+
+# Keep intentional sample logs tracked
+
+!samples/
+!samples/logs/
+!samples/logs/*.log
+!samples/logs/*.txt
+!samples/logs/*.csv
+!samples/logs/*.json
+!samples/logs/*.jsonl
+!samples/logs/*.ndjson
+!samples/logs/*.reg
+!samples/logs/*.html
+!samples/logs/*.xml
+
+# Sample/test output
+
+samples/out/
+
+# Downloaded helper packages / temporary overlay folders
+
+repo-improvements/
+wiki-pages*/
+universal-log-scrubber-*.zip
+UniversalLogScrubber-*.zip
+release/
+*.nupkg
+
+# PowerShell / local tooling
+
+*.ps1xml
+*.pssc
+*.psrc
+*.psd1.bak
+*.tmp
+*.bak
+*.bak-json-depth-*
+
+# Editor and OS noise
+
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Codex/local workspace state
+
+.agents/
+.codex/
+
+# Maintainer-only local release tooling
+
+maintainer-tools/

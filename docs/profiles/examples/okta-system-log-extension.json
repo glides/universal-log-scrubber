@@ -1,0 +1,47 @@
+{
+  "Name": "Okta System Log Extension",
+  "Description": "Additive extension for IdentityProvider/CloudAudit runs against Okta System Log JSON.",
+  "AllowedDomains": [
+    "okta.com",
+    "okta-emea.com",
+    "okta-gov.com"
+  ],
+  "LabelRules": [
+    {
+      "Name": "OktaActorTargetLabels",
+      "Labels": [
+        "alternateId",
+        "displayName",
+        "actor",
+        "target",
+        "ipAddress",
+        "requestId",
+        "requestUri",
+        "deviceFingerprint"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "OktaUserApiPath",
+      "Regex": "(?i)(/api/v1/users/)([^/\\?\"']+)",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "/api/v1/users/"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "OktaOAuthHint",
+      "Regex": "(?i)(login_hint=)([^&\\s]+)",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "login_hint="
+      ],
+      "Entropy": 0
+    }
+  ]
+}

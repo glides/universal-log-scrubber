@@ -1,0 +1,45 @@
+{
+  "Name": "Strict Workstation Paths Extension",
+  "Description": "Additive extension for Text, IntuneDiagnostics, SccmText, and event-text workflows when user profile paths, UNC paths, and workstation-like hostnames must be aggressively scrubbed. Useful for stricter customer-upload rules.",
+  "CustomRegexRules": [
+    {
+      "Name": "WindowsUserProfilePath",
+      "Regex": "(?i)(C:\\\\Users\\\\)([^\\\\\"'\\s]+)",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "C:\\Users\\"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "UncHostAndShare",
+      "Regex": "(?i)\\\\\\\\([^\\\\\\s]+)\\\\([^\\\\\\s]+)",
+      "CaptureGroup": 1,
+      "Prefix": "COMPUTER",
+      "Keywords": [
+        "\\\\"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "WorkstationNameWithDigits",
+      "Regex": "(?i)\\b((?:LT|LAPTOP|DESKTOP|VDI|SRV|PC|WKSTN)[-_][A-Z0-9][A-Z0-9_-]{2,30}\\d)\\b",
+      "CaptureGroup": 1,
+      "Prefix": "COMPUTER",
+      "Keywords": [
+        "LT-",
+        "LAPTOP",
+        "DESKTOP",
+        "VDI",
+        "SRV"
+      ],
+      "Entropy": 0
+    }
+  ],
+  "Allowlist": [
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\ProgramData"
+  ]
+}

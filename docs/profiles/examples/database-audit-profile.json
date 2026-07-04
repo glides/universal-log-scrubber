@@ -1,0 +1,89 @@
+{
+  "SchemaVersion": 2,
+  "Name": "Database-Audit-Custom",
+  "Description": "Full BYOP CSV profile for SQL/PostgreSQL-style audit exports where user, client, statement, and detail fields can contain sensitive identifiers.",
+  "Format": "Csv",
+  "Delimiter": ",",
+  "DenyByDefault": true,
+  "SchemaColumns": [
+    {
+      "Exact": "event_time",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "command_tag",
+      "Action": "PassThrough"
+    },
+    {
+      "Exact": "statement",
+      "Action": "Scan"
+    },
+    {
+      "Exact": "detail",
+      "Action": "Scan"
+    },
+    {
+      "Exact": "hint",
+      "Action": "PassThrough"
+    }
+  ],
+  "WholeColumnRules": [
+    {
+      "Exact": "database_user",
+      "Prefix": "PRINCIPAL"
+    },
+    {
+      "Exact": "client_addr",
+      "Prefix": "IP"
+    },
+    {
+      "Exact": "session_id",
+      "Prefix": "OBJECT"
+    },
+    {
+      "Exact": "server_host",
+      "Prefix": "DNS"
+    },
+    {
+      "Exact": "object_name",
+      "Prefix": "OBJECT"
+    }
+  ],
+  "LabelRules": [
+    {
+      "Name": "DbStatementLabels",
+      "Labels": [
+        "user",
+        "owner",
+        "recovery_email",
+        "apiKey",
+        "token",
+        "sid",
+        "workstation"
+      ],
+      "Prefix": "OBJECT"
+    }
+  ],
+  "CustomRegexRules": [
+    {
+      "Name": "SqlQuotedEmail",
+      "Regex": "(?i)([\"'])([A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}|[A-Z0-9._%+-]+@corp\\.local)([\"'])",
+      "CaptureGroup": 2,
+      "Prefix": "PRINCIPAL",
+      "Keywords": [
+        "@"
+      ],
+      "Entropy": 0
+    },
+    {
+      "Name": "SqlSkTestSecret",
+      "Regex": "(?i)\\bsk-test-[a-f0-9]{16,64}\\b",
+      "CaptureGroup": 0,
+      "Prefix": "SECRET",
+      "Keywords": [
+        "sk-test-"
+      ],
+      "Entropy": 0
+    }
+  ]
+}

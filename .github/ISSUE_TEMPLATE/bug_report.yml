@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible problem using synthetic or scrubbed data.
+title: "Bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include raw client logs, secrets, salts, token maps, or files marked DO_NOT_UPLOAD.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Use fictional data that still reproduces the issue.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command used
+      render: powershell
+  - type: dropdown
+    id: powershell
+    attributes:
+      label: PowerShell version
+      options:
+        - PowerShell 7
+        - Windows PowerShell 5.1
+        - Both
+        - Not sure
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant output or error
+      description: Remove private values before posting.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed real secrets, salts, token maps, raw logs, and DO_NOT_UPLOAD files.
+          required: true
