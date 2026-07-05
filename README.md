@@ -6,6 +6,10 @@ Universal Log Scrubber is a local-first PowerShell module for preparing logs, di
 
 It replaces sensitive values with deterministic typed tokens while keeping the surrounding log structure readable. Reviewers can still follow events, counts, timelines, users, devices, and relationships without receiving the original identifiers.
 
+<p align="center">
+  <img src="docs/assets/uls-interactive-console.svg" alt="Universal Log Scrubber interactive console preview" width="920">
+</p>
+
 ## Latest updates
 
 **v1.1.0** is the interactive workflow release.
@@ -55,19 +59,19 @@ Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
 Invoke-UniversalScrubber
 ```
 
-Useful interactive commands:
+Useful interactive commands use the `(ULS) >` prompt:
 
 ```text
-help
-set path ".\samples\logs"
-set workdir ".\samples\out\quickstart"
-set saltfile ".\salt.txt"
-set recurse true
-validate profile
-plan
-scrub
-last
-exit
+(ULS) > help
+(ULS) > set path ".\samples\logs"
+(ULS) > set workdir ".\samples\out\quickstart"
+(ULS) > set saltfile ".\salt.txt"
+(ULS) > set recurse true
+(ULS) > validate profile
+(ULS) > plan
+(ULS) > scrub
+(ULS) > last
+(ULS) > exit
 ```
 
 Scripted runs still work normally:

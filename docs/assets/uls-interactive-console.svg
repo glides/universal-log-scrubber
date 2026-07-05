@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="360" viewBox="0 0 1180 360" role="img" aria-labelledby="title desc">
+  <title id="title">Universal Log Scrubber interactive console preview</title>
+  <desc id="desc">A styled terminal window preview showing the Universal Log Scrubber interactive help command with the colored ULS prompt.</desc>
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+    <linearGradient id="terminalBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b0f14"/>
+      <stop offset="1" stop-color="#050607"/>
+    </linearGradient>
+    <linearGradient id="titleBar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#101820"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1180" height="360" fill="#f6f8fa"/>
+  <rect x="28" y="24" width="1124" height="308" rx="16" fill="url(#terminalBg)" stroke="#1f6feb" stroke-width="1.4" filter="url(#shadow)"/>
+  <rect x="28" y="24" width="1124" height="54" rx="16" fill="url(#titleBar)"/>
+  <path d="M 28 78 H 1152" stroke="#1f6feb" stroke-width="1.1" opacity="0.8"/>
+  <circle cx="54" cy="51" r="6" fill="#ff5f56"/>
+  <circle cx="76" cy="51" r="6" fill="#ffbd2e"/>
+  <circle cx="98" cy="51" r="6" fill="#27c93f"/>
+  <text x="126" y="57" font-family="Consolas, 'Cascadia Mono', 'Courier New', monospace" font-size="16" font-weight="700" fill="#ff00ff">[&gt;_] Universal Log Scrubber</text>
+  <text x="892" y="57" font-family="Consolas, 'Cascadia Mono', 'Courier New', monospace" font-size="13" fill="#8b949e">Share the logs, not the exposure.</text>
+
+  <g font-family="Consolas, 'Cascadia Mono', 'Courier New', monospace" font-size="16">
+    <text x="62" y="108">
+      <tspan fill="#ffffff">(</tspan><tspan fill="#ff00ff">ULS</tspan><tspan fill="#ffffff">)</tspan><tspan fill="#0aa6a6"> &gt;</tspan><tspan fill="#ffffff"> help</tspan>
+    </text>
+
+    <text x="62" y="146" fill="#39c5ff">─── Interactive commands ───────────────────────────────────────────────</text>
+    <text x="62" y="170" fill="#7ee7ff">scrub</text>
+    <text x="150" y="170" fill="#f0f6fc">Start a guided scrub job or run one from typed/session options.</text>
+    <text x="62" y="194" fill="#7ee7ff">recommend</text>
+    <text x="150" y="194" fill="#f0f6fc">Analyze a file/folder and recommend a profile without scrubbing.</text>
+    <text x="62" y="218" fill="#7ee7ff">profile</text>
+    <text x="150" y="218" fill="#f0f6fc">List built-in profiles or inspect one built-in/BYOP profile.</text>
+    <text x="62" y="242" fill="#7ee7ff">validate</text>
+    <text x="150" y="242" fill="#f0f6fc">Validate a built-in or BYOP profile before scrubbing.</text>
+    <text x="62" y="266" fill="#7ee7ff">set</text>
+    <text x="150" y="266" fill="#f0f6fc">Set session defaults, or show current defaults when used by itself.</text>
+    <text x="62" y="290" fill="#7ee7ff">plan</text>
+    <text x="150" y="290" fill="#f0f6fc">Preview the Invoke-UniversalScrubber command without running it.</text>
+    <text x="62" y="314" fill="#7ee7ff">last</text>
+    <text x="150" y="314" fill="#f0f6fc">Inspect the most recent interactive scrub run.</text>
+  </g>
+</svg>

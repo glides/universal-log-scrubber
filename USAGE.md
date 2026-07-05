@@ -17,18 +17,18 @@ The launcher script does the same thing when run without arguments:
 .\scripts\Run-UniversalScrubber.ps1
 ```
 
-Inside the console:
+Inside the console, commands use the `(ULS) >` prompt:
 
 ```text
-help
-set path ".\samples\logs"
-set workdir ".\samples\out\quickstart"
-set saltfile ".\salt.txt"
-set recurse true
-plan
-scrub
-last
-exit
+(ULS) > help
+(ULS) > set path ".\samples\logs"
+(ULS) > set workdir ".\samples\out\quickstart"
+(ULS) > set saltfile ".\salt.txt"
+(ULS) > set recurse true
+(ULS) > plan
+(ULS) > scrub
+(ULS) > last
+(ULS) > exit
 ```
 
 Useful commands:
@@ -116,10 +116,10 @@ Invoke-UniversalScrubber `
 Inside interactive mode:
 
 ```text
-profile .\docs\profiles\kv-log-profile.json
-validate profile .\docs\profiles\kv-log-profile.json
-set profilefile .\docs\profiles\kv-log-profile.json
-plan
+(ULS) > profile .\docs\profiles\kv-log-profile.json
+(ULS) > validate profile .\docs\profiles\kv-log-profile.json
+(ULS) > set profilefile .\docs\profiles\kv-log-profile.json
+(ULS) > plan
 ```
 
 `-AutoProfile` is still available for strict noninteractive use, but it requires one high-confidence profile for all selected files. For mixed folders, omit `-Profile` or use the interactive Auto default.
@@ -139,10 +139,10 @@ Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -
 Inside interactive mode:
 
 ```text
-validate profile
-validate profile Generic
-validate profile .\docs\profiles\kv-log-profile.json
-validate profile .\docs\profiles\kv-log-profile.json -Detailed
+(ULS) > validate profile
+(ULS) > validate profile Generic
+(ULS) > validate profile .\docs\profiles\kv-log-profile.json
+(ULS) > validate profile .\docs\profiles\kv-log-profile.json -Detailed
 ```
 
 When no target is supplied, `validate profile` uses the current interactive session profile. If the current profile is `Auto`, the console explains that Auto is a workflow default rather than a profile file.
