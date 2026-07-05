@@ -3,7 +3,7 @@
   <desc id="desc">A styled terminal window preview showing the Universal Log Scrubber interactive help command with the colored ULS prompt.</desc>
   <defs>
     <filter id="shadow" x="-10%" y="-10%" width="120%" height="135%">
-      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.38"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.28"/>
     </filter>
     <linearGradient id="terminalBg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#0b0f14"/>
@@ -15,10 +15,9 @@
     </linearGradient>
   </defs>
 
-  <rect width="1180" height="360" fill="#f6f8fa"/>
-  <rect x="28" y="24" width="1124" height="308" rx="16" fill="url(#terminalBg)" stroke="#1f6feb" stroke-width="1.4" filter="url(#shadow)"/>
+  <rect x="28" y="24" width="1124" height="308" rx="16" fill="url(#terminalBg)" stroke="#2f81f7" stroke-width="1.4" filter="url(#shadow)"/>
   <rect x="28" y="24" width="1124" height="54" rx="16" fill="url(#titleBar)"/>
-  <path d="M 28 78 H 1152" stroke="#1f6feb" stroke-width="1.1" opacity="0.8"/>
+  <path d="M 28 78 H 1152" stroke="#2f81f7" stroke-width="1.1" opacity="0.85"/>
   <circle cx="54" cy="51" r="6" fill="#ff5f56"/>
   <circle cx="76" cy="51" r="6" fill="#ffbd2e"/>
   <circle cx="98" cy="51" r="6" fill="#27c93f"/>
