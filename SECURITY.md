@@ -1,4 +1,4 @@
-# Security Policy
+﻿# Security Policy
 
 Universal Log Scrubber is designed for local preparation of sensitive logs before external analysis. Security reports are welcome, especially if the issue could cause sensitive data to remain in output that appears safe.
 

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Runs a sample-log smoke test against synthetic logs in .\samples.
 
@@ -33,7 +33,7 @@ $cases = @(
     @{ Name='Gateway key/value'; Path='gateway-kv.log'; Profile='Logfmt' },
     @{ Name='VPN/firewall text'; Path='vpn-firewall.log'; Profile='Firewall' },
     @{ Name='Web access text'; Path='web-access.log'; Profile='WebAccess' },
-    @{ Name='Windows event CSV'; Path='windows-event-sample.csv'; Profile='WindowsEventCsv' },
+    @{ Name='Windows Event XML text'; Path='sysmon-event-xml.txt'; Profile='WindowsEventXml' },
     @{ Name='ServiceNow incidents CSV'; Path='servicenow_incidents.csv'; Profile='ServiceNow' },
     @{ Name='Nexthink devices/executions CSV'; Path='nexthink_devices_executions.csv'; Profile='Nexthink' },
     @{ Name='M365 unified audit CSV'; Path='m365_unified_audit_log.csv'; Profile='IdentityProvider' },
@@ -53,7 +53,7 @@ $cases = @(
     @{ Name='Kubernetes audit JSONL'; Path='kubernetes-audit.jsonl'; ProfileFile='kubernetes-audit-profile.json'; RawAbsent=@('naomi.rivera@northstar.example','sk-test-') },
     @{ Name='Nginx reverse proxy access'; Path='nginx-reverse-proxy-access.log'; Profile='WebAccess'; ProfileExtensionFile='webaccess-query-token-extension.json'; RawAbsent=@('SESS-8K4T-2291-55bb44e4','naomi.rivera%40northstar.example') },
     @{ Name='Palo Alto traffic CSV'; Path='paloalto-traffic.csv'; ProfileFile='paloalto-traffic-csv-profile.json'; RawAbsent=@('CORP\naomi.rivera','LT-RIVER-7742') },
-    @{ Name='Sysmon event XML text'; Path='sysmon-event-xml.txt'; Profile='Text'; ProfileExtensionFile='strict-workstation-paths-extension.json'; RawAbsent=@('C:\Users\naomi.rivera','CORP\naomi.rivera') },
+    @{ Name='Sysmon event XML text with strict extension'; Path='sysmon-event-xml.txt'; Profile='WindowsEventXml'; ProfileExtensionFile='strict-workstation-paths-extension.json'; RawAbsent=@('C:\Users\naomi.rivera','CORP\naomi.rivera') },
     @{ Name='PostgreSQL audit CSV'; Path='postgresql-audit.csv'; ProfileFile='database-audit-profile.json'; RawAbsent=@('naomi.rivera@northstar.example','sk-test-') },
     @{ Name='EDR process alerts JSONL'; Path='edr-process-alerts.jsonl'; Profile='Edr'; RawAbsent=@('C:\Users\naomi.rivera','naomi.rivera@northstar.example') }
 )
@@ -130,7 +130,7 @@ $built = Invoke-UniversalScrubber `
     -PassThru
 
 if (-not (Test-Path -LiteralPath $built.ProfilePath)) { [void]$failures.Add('Profile builder did not write a profile.') }
-if (-not (Test-ScrubProfile -Path $built.ProfilePath -Quiet)) { [void]$failures.Add('Generated sample profile did not validate.') }
+if (-not (Test-UniversalScrubberProfile -ProfileFile $built.ProfilePath -Quiet)) { [void]$failures.Add('Generated sample profile did not validate.') }
 
 if ($failures.Count -gt 0) {
     Write-Host ""

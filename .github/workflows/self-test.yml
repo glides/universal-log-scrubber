@@ -12,6 +12,7 @@ permissions:
 jobs:
   scrubber-self-test:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,6 +25,9 @@ jobs:
 
           $requiredCommands = @(
             'Invoke-UniversalScrubber',
+            'Invoke-UniversalLogScrubber',
+            'Start-UniversalScrubberInteractive',
+            'Test-UniversalScrubberProfile',
             'Test-LogFormat',
             'New-ScrubTokenMap',
             'Import-ScrubTokenMap',
@@ -49,9 +53,46 @@ jobs:
 
           $module = Get-Module UniversalLogScrubber
           if (-not $module) { throw 'UniversalLogScrubber module did not import.' }
-          if ($module.Version -ne [version]'1.0.2') {
+          if ($module.Version -ne [version]'1.1.0') {
             throw "Unexpected module version: $($module.Version)"
           }
+
+          # v1.1.0 surface checks: these must return and must not enter interactive mode.
+          Invoke-UniversalScrubber -Help | Out-Null
+          Invoke-UniversalScrubber -Version | Out-Null
+          if (-not (Test-UniversalScrubberProfile -Profile Generic -Quiet)) { throw 'Built-in Generic profile did not validate in Windows PowerShell 5.1.' }
+          if (-not (Test-UniversalScrubberProfile -Profile Generic -Quiet)) { throw 'Built-in Generic profile did not validate.' }
+
+      - name: Import module in Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
+
+          $requiredCommands = @(
+            'Invoke-UniversalScrubber',
+            'Invoke-UniversalLogScrubber',
+            'Start-UniversalScrubberInteractive',
+            'Test-UniversalScrubberProfile',
+            'Test-LogFormat',
+            'Get-ScrubProfile'
+          )
+
+          foreach ($command in $requiredCommands) {
+            if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
+              throw "Expected command was not available in Windows PowerShell 5.1: $command"
+            }
+          }
+
+          $module = Get-Module UniversalLogScrubber
+          if (-not $module) { throw 'UniversalLogScrubber module did not import in Windows PowerShell 5.1.' }
+          if ($module.Version -ne [version]'1.1.0') {
+            throw "Unexpected Windows PowerShell 5.1 module version: $($module.Version)"
+          }
+
+          # These must return immediately and must not enter interactive mode.
+          Invoke-UniversalScrubber -Help | Out-Null
+          Invoke-UniversalScrubber -Version | Out-Null
 
       - name: Validate example profiles and extensions
         shell: pwsh
@@ -82,7 +123,7 @@ jobs:
 
             if ($propertyNames -contains 'Format') {
               $fullProfileCount++
-              if (-not (Test-ScrubProfile -Path $profile.FullName -Quiet)) {
+              if (-not (Test-UniversalScrubberProfile -ProfileFile $profile.FullName -Quiet)) {
                 throw "Profile failed validation: $($profile.FullName)"
               }
             } else {
@@ -95,6 +136,7 @@ jobs:
 
       - name: Run sample log smoke tests
         shell: pwsh
+        timeout-minutes: 10
         run: |
           $ErrorActionPreference = 'Stop'
           .\scripts\Test-SampleLogs.ps1

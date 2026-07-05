@@ -1,15 +1,15 @@
-<#
+﻿<#
 .SYNOPSIS
   Launcher for the Universal Log Scrubber. Just run it.
 
 .DESCRIPTION
-  Imports the packaged UniversalLogScrubber module and starts the interactive,
-  hand-held scrubbing flow. Any switch you pass is forwarded;
-  anything still required is prompted for.
+  Imports the packaged UniversalLogScrubber module. With no arguments, it opens
+  the v1.1 interactive command console. Any switch you pass is forwarded to
+  Invoke-UniversalScrubber for scripted or noninteractive workflows.
 
 .EXAMPLE
   .\Run-UniversalScrubber.ps1
-  # Fully interactive.
+  # Opens the interactive ULS command console.
 
 .EXAMPLE
   .\Run-UniversalScrubber.ps1 -Path C:\winlogs\Security.evtx
@@ -22,6 +22,8 @@
 [CmdletBinding()]
 param(
     [switch]$Version,
+    [switch]$Help,
+    [switch]$Interactive,
     [string]$Path,
     [string]$WorkDir,
     [switch]$RecommendOnly,

@@ -1,4 +1,29 @@
-# Changelog
+﻿# Changelog
+
+## v1.1.0
+
+Interactive workflow release focused on making Universal Log Scrubber easier to run safely from a terminal while preserving existing scripted behavior.
+
+### Highlights
+
+- Added the default interactive command console. Running `Invoke-UniversalScrubber` with no arguments now opens the ULS console.
+- Added `Start-UniversalScrubberInteractive` and `Invoke-UniversalScrubber -Interactive`.
+- Added `Invoke-UniversalScrubber -Help` and expanded `-Version`/interactive `version full` details.
+- Added interactive commands for `help`, `profile`, `validate`, `set`, `plan`, `scrub`, `last`, `version`, `doctor`, `examples`, `clear`, and `exit`.
+- Added session defaults so operators can set common values once and reuse them across `plan` and `scrub`.
+- Added safer command previews: literal salts are hidden and represented as `$global:UlsInteractiveSalt` instead of being printed.
+- Made interactive `Auto` the default profile behavior. Auto does not force one profile; it lets normal format-aware defaults handle mixed folders unless the user explicitly sets a profile.
+- Added BYOP profile inspection and validation from the interactive console.
+- Added `Test-UniversalScrubberProfile` for noninteractive validation of built-in and BYOP profiles before scrubbing.
+- Improved ETL behavior so `.etl` files are skipped with a clear warning unless `-ConvertEtl` is supplied.
+- Updated Windows Event workflow language to `WindowsEventXml` and converted event XML text.
+- Added/updated maintainer checks for the 1.1.0 module version and interactive command export.
+
+### Notes
+
+- Existing scripted commands continue to work.
+- Strict single-profile recommendation behavior remains available with `-AutoProfile`.
+- Token maps, salts, raw logs, converted intermediates, detailed detection reports, profile-build reports, and files marked `DO_NOT_UPLOAD` remain local-only.
 
 ## v1.0.2
 

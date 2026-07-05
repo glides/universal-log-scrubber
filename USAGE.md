@@ -1,21 +1,66 @@
-# Universal Log Scrubber Usage Guide
+﻿# Universal Log Scrubber Usage Guide
 
-This guide covers the public `1.0.2` workflow for running Universal Log Scrubber against files, folders, diagnostic bundles, and common enterprise log exports.
+This guide covers the public `1.1.0` workflow for running Universal Log Scrubber against files, folders, diagnostic bundles, and common enterprise log exports.
 
-## 1. Basic command pattern
+## 1. Start interactive mode
+
+The easiest way to start is now the interactive command console:
+
+```powershell
+Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
+Invoke-UniversalScrubber
+```
+
+The launcher script does the same thing when run without arguments:
+
+```powershell
+.\scripts\Run-UniversalScrubber.ps1
+```
+
+Inside the console:
+
+```text
+help
+set path ".\samples\logs"
+set workdir ".\samples\out\quickstart"
+set saltfile ".\salt.txt"
+set recurse true
+plan
+scrub
+last
+exit
+```
+
+Useful commands:
+
+| Command | Purpose |
+|---|---|
+| `help` | Show interactive help. Use `help scrub`, `help set`, or `help profile` for command-specific help. |
+| `profile` | List built-in profiles or inspect one profile. Use `profile .\docs\profiles\kv-log-profile.json` for BYOP files. |
+| `validate` | Validate a built-in or BYOP profile before scrubbing. Use `validate profile .\docs\profiles\kv-log-profile.json`. |
+| `set` | Show or set session defaults such as `path`, `workdir`, `profile`, `saltfile`, and `recurse`. |
+| `plan` | Preview the command that will run without running it. Literal salts are hidden. |
+| `scrub` | Run a guided or session-based scrub job. |
+| `last` | Show the most recent interactive run, manifest, skipped files, failed files, or command. |
+| `version` | Show version/runtime details. Use `version full` for synopsis, description, and notes. |
+| `doctor` | Check the local host, PowerShell version, paths, optional tools, and common readiness items. |
+
+## 2. Scripted command pattern
+
+Scripted and automation workflows still use the normal PowerShell command style:
 
 ```powershell
 Invoke-UniversalScrubber `
   -Path <file-or-folder> `
   -WorkDir <output-folder> `
-  -Profile <profile-name> `
   -MapSource Discover `
   -TokenMapMode Replace `
   -SaltFile .\salt.txt `
+  -Recurse `
   -NonInteractive
 ```
 
-Use `-Recurse` for nested folders.
+Use `-Profile <profile-name>` when you want to force one profile for the whole run. If `-Profile` is omitted, the scrubber uses its normal format-aware workflow.
 
 For a repository checkout, the launcher script is usually the easiest entry point:
 
@@ -23,7 +68,6 @@ For a repository checkout, the launcher script is usually the easiest entry poin
 .\scripts\Run-UniversalScrubber.ps1 `
   -Path .\samples\logs `
   -WorkDir .\samples\out\quickstart `
-  -Profile Generic `
   -Recurse `
   -MapSource Discover `
   -TokenMapMode Replace `
@@ -31,15 +75,17 @@ For a repository checkout, the launcher script is usually the easiest entry poin
   -NonInteractive
 ```
 
-## 2. Choose a profile
+## 3. Auto, profiles, and BYOP
 
-Profiles tell the scrubber how to interpret a source. Use a specific profile when you know the source. Use `Generic` when you do not.
+In the interactive console, `Auto` is the default. Auto does **not** force a single profile. It means the scrubber will use its existing format-aware defaults and conversion workflows. This is useful for mixed folders.
+
+Use a specific profile when you know the source:
 
 | Profile | Best for |
 |---|---|
-| `Generic` | Unknown mixed files, quick starts, and broad folder runs. |
+| `Generic` | Unknown files where broad detection is preferred. |
 | `Text` | Free-form text where every line should be scanned. |
-| Windows Event files | Use the local event conversion workflow. Converted `.events.txt` output is scrubbed as event text. |
+| `WindowsEventXml` | Windows Event logs converted locally to event XML text. |
 | `IntuneDiagnostics` | Intune diagnostic bundles, MDM reports, registry exports, XML/HTML reports, `.log_` files, and converted event text. |
 | `Intune` | Intune/Endpoint Manager CSV exports such as managed devices, app, enrollment, policy, and compliance reports. |
 | `ServiceNow` | Incident, change, task, CMDB, caller, assignment, CI, notes, and URL exports. |
@@ -48,91 +94,129 @@ Profiles tell the scrubber how to interpret a source. Use a specific profile whe
 | `SccmText` | SCCM/MECM/ConfigMgr CMTrace-style client and management-point logs. |
 | `Firewall`, `FirewallText`, `FirewallCsv` | Firewall, VPN, network security, syslog, key-value, and CSV exports. |
 | `Vpn` | VPN and remote-access authentication gateway logs. |
-| `Proxy` | Proxy, SWG, and web filtering exports. |
-| `IIS` | IIS/W3C logs with `#Fields` headers. |
-| `WebAccess`, `Apache` | Reverse proxy, Nginx, Apache, CDN, and web access logs. |
-| `Syslog` | Syslog and syslog-like line logs. |
-| `Cef`, `Logfmt` | CEF/LEEF-like key-value events and logfmt application logs. |
-| `CloudAudit` | Cloud audit/activity logs with principals, tenants, resources, IPs, and request IDs. |
+| `CloudAudit` | Cloud activity/audit exports. |
 | `IdentityProvider` | Entra, Okta, SSO, MFA, and directory sign-in logs. |
-| `Edr` | EDR/XDR alert exports with users, devices, network destinations, commands, and evidence. |
-| `AppJson` | Application JSON/NDJSON logs. |
-| `Database` | Database audit/query logs with users, clients, hosts, SQL text, and connection strings. |
-| `Container`, `Kubernetes` | Container runtime, Docker, orchestrator, and Kubernetes audit logs. |
-| `CA` | AD CS / certificate authority audit exports. |
-| `Tsv`, `Psv` | Tab-separated or pipe-separated tables. |
+| `Edr` | EDR/XDR alert exports. |
+| `Kubernetes` | Kubernetes audit and workload logs. |
+| `Database` | Database audit/query logs. |
 
-## 3. Pick a token-map source
-
-| Map source | Use when |
-|---|---|
-| `Discover` | Normal workflow. Build a map from the supplied files. |
-| `ExistingMap` | Re-run against related files and keep token correlation with an earlier run. |
-| `AD` | Build an identity-aware map from Active Directory before scrubbing. Requires a domain-joined session with read access. |
-
-For most public examples and first runs, use:
+For BYOP profiles:
 
 ```powershell
--MapSource Discover -TokenMapMode Replace
+Invoke-UniversalScrubber `
+  -Path .\samples\logs\gateway-kv.log `
+  -ProfileFile .\docs\profiles\kv-log-profile.json `
+  -WorkDir .\samples\out\kv `
+  -SaltFile .\salt.txt `
+  -MapSource Discover `
+  -TokenMapMode Replace `
+  -NonInteractive
 ```
 
-Use `Replace` for fresh jobs. Use `Merge` only when you intentionally want to preserve existing map rows.
+Inside interactive mode:
+
+```text
+profile .\docs\profiles\kv-log-profile.json
+validate profile .\docs\profiles\kv-log-profile.json
+set profilefile .\docs\profiles\kv-log-profile.json
+plan
+```
+
+`-AutoProfile` is still available for strict noninteractive use, but it requires one high-confidence profile for all selected files. For mixed folders, omit `-Profile` or use the interactive Auto default.
+
+### Validate profiles before use
+
+For noninteractive checks, use the PowerShell command:
+
+```powershell
+Test-UniversalScrubberProfile -Profile Generic
+Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Detailed
+Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Quiet
+```
+
+`Test-UniversalScrubberProfile` validates that the profile can be loaded by the scrubber runtime, checks required profile shape, compiles regex rules, counts rules, warns about unknown profile properties, and checks referenced seed/allowlist files. `-Quiet` returns `$true` or `$false` for scripts and CI.
+
+Inside interactive mode:
+
+```text
+validate profile
+validate profile Generic
+validate profile .\docs\profiles\kv-log-profile.json
+validate profile .\docs\profiles\kv-log-profile.json -Detailed
+```
+
+When no target is supplied, `validate profile` uses the current interactive session profile. If the current profile is `Auto`, the console explains that Auto is a workflow default rather than a profile file.
 
 ## 4. Salt handling
 
-A salt is required for deterministic tokens. Keep it private.
-
-Recommended automation pattern:
-
-```powershell
-$env:SCRUB_SALT = 'use-a-long-random-secret-value'
-
-Invoke-UniversalScrubber `
-  -Path .\logs `
-  -WorkDir .\out `
-  -Profile Generic `
-  -MapSource Discover `
-  -SaltFromEnv SCRUB_SALT `
-  -NonInteractive
-```
-
-A salt file is also supported:
+Use one of these:
 
 ```powershell
 -SaltFile .\salt.txt
+-SaltFromEnv SCRUB_SALT
+-Salt "temporary-value"
 ```
 
-Avoid typing salts directly into shared scripts, screenshots, tickets, or command history.
+Prefer `-SaltFile` or `-SaltFromEnv` for repeatable workflows. Literal salts are accepted, but the interactive `plan` and `scrub` previews hide them and show `$global:UlsInteractiveSalt` instead.
 
-## 5. Preview before scrubbing
+Never upload salts or token maps.
 
-Use recommendation modes when you are not sure what profile or workflow to use:
+## 5. Dry runs and recommendation runs
+
+Recommendation-only mode does not require a salt:
 
 ```powershell
-Invoke-UniversalScrubber -Path .\logs -RecommendOnly -Recurse
-Invoke-UniversalScrubber -Path .\logs -SafeFirstRun -Recurse
+Invoke-UniversalScrubber -Path .\samples\logs -RecommendOnly -Recurse -NonInteractive
 ```
 
-Use dry run when you want to inspect detection behavior before writing scrubbed outputs:
+Dry-run mode previews detections and does not write scrubbed output:
 
 ```powershell
 Invoke-UniversalScrubber `
-  -Path .\logs `
-  -WorkDir .\out-preview `
-  -Profile Generic `
-  -MapSource Discover `
+  -Path .\samples\logs `
+  -WorkDir .\samples\out\dryrun `
   -DryRun `
-  -ExplainDetections `
   -SaltFile .\salt.txt `
+  -MapSource Discover `
+  -Recurse `
   -NonInteractive
 ```
 
-Dry-run evidence is local-only. Review it, tune profiles/seeds/allowlists if needed, then run the real scrub.
+For first-time use, `-SafeFirstRun` is a conservative local review workflow.
 
-## 6. Intune diagnostic bundles
+## 6. Windows Event, EVTX, and ETL workflows
+
+Native `.evtx` and `.evt` files are converted locally to event XML text before scrubbing:
 
 ```powershell
-.\scripts\Run-UniversalScrubber.ps1 `
+Invoke-UniversalScrubber `
+  -Path .\logs\win-events `
+  -WorkDir .\out\win-events `
+  -SaltFile .\salt.txt `
+  -MapSource Discover `
+  -TokenMapMode Replace `
+  -Recurse `
+  -NonInteractive
+```
+
+`.etl` files are skipped with a warning unless `-ConvertEtl` is supplied:
+
+```powershell
+Invoke-UniversalScrubber `
+  -Path .\logs\traces `
+  -WorkDir .\out\traces `
+  -ConvertEtl `
+  -SaltFile .\salt.txt `
+  -MapSource Discover `
+  -NonInteractive
+```
+
+ETL conversion depends on Windows-local event tooling. If conversion is not available, convert locally on a Windows host and scrub the resulting `.events.txt` output.
+
+## 7. Intune diagnostics
+
+```powershell
+Invoke-UniversalScrubber `
   -Path "C:\Path\To\DiagLogs" `
   -WorkDir "C:\Path\To\ScrubbedOutput" `
   -Profile IntuneDiagnostics `
@@ -144,119 +228,42 @@ Dry-run evidence is local-only. Review it, tune profiles/seeds/allowlists if nee
   -NonInteractive
 ```
 
-Notes:
+Review skipped files and output before sharing. Upload only scrubbed files or a reviewed safe bundle.
 
-- CAB extraction is explicit. Without `-ExtractCab`, CAB files are skipped and listed in the manifest.
-- `.evtx` files are converted locally before scrub when supported.
-- `.etl` conversion is explicit with `-ConvertEtl`.
-- Converted files and extracted workspaces are local intermediates until scrubbed and reviewed.
-- Use a fresh work directory for each full run.
-
-## 7. Reuse an existing map
-
-Use this when files belong to the same case and token correlation must stay stable:
-
-```powershell
-Invoke-UniversalScrubber `
-  -Path .\more-logs `
-  -WorkDir .\out-rerun `
-  -Profile Generic `
-  -MapSource ExistingMap `
-  -TokenMapCsv .\out\scrub_token_map_DO_NOT_UPLOAD.csv `
-  -SaltFile .\salt.txt `
-  -NonInteractive
-```
-
-The existing map and salt must stay private.
-
-## 8. BYOP profiles and extensions
-
-Use `-ProfileFile` when a source needs its own profile:
-
-```powershell
-Invoke-UniversalScrubber `
-  -Path .\samples\logs\kubernetes-audit.jsonl `
-  -ProfileFile .\docs\profiles\examples\kubernetes-audit-profile.json `
-  -WorkDir .\samples\out\kubernetes `
-  -MapSource Discover `
-  -SaltFile .\salt.txt `
-  -NonInteractive
-```
-
-Use `-ProfileExtensionFile` when a built-in profile is close but needs local tuning:
-
-```powershell
-Invoke-UniversalScrubber `
-  -Path .\samples\logs\aws-cloudtrail-management.jsonl `
-  -Profile CloudAudit `
-  -ProfileExtensionFile .\docs\profiles\examples\aws-cloudtrail-extension.json `
-  -WorkDir .\samples\out\cloudtrail `
-  -MapSource Discover `
-  -SaltFile .\salt.txt `
-  -NonInteractive
-```
-
-Use profile extensions for local field names, tenant aliases, application labels, asset naming patterns, project names, or known safe allowlist values.
-
-## 9. Seeds and allowlists
-
-Use seed terms for sensitive values that have no reliable pattern:
+## 8. Safe upload bundles
 
 ```powershell
 Invoke-UniversalScrubber `
   -Path .\logs `
   -WorkDir .\out `
-  -Profile Generic `
-  -SeedFile .\seeds.txt `
   -SaltFile .\salt.txt `
   -MapSource Discover `
-  -NonInteractive
-```
-
-Use allowlists for public or harmless values that should stay readable:
-
-```powershell
--AllowlistFile .\allowlist.txt
-```
-
-Seed files and allowlists should contain only approved values. Do not publish local seed files if they contain client names, tenant names, project names, or private identifiers.
-
-## 10. Safe upload bundles
-
-```powershell
-Invoke-UniversalScrubber `
-  -Path .\logs `
-  -WorkDir .\out `
-  -Profile Generic `
-  -MapSource Discover `
-  -SaltFile .\salt.txt `
+  -TokenMapMode Replace `
   -SafeBundleOut .\out\safe-upload.zip `
-  -Force `
+  -Recurse `
   -NonInteractive
 ```
 
-Safe bundles are intended to include successful scrubbed outputs and a safe readme. They should exclude token maps, salts, raw inputs, converted intermediates, local-only reports, manifests, and files marked `DO_NOT_UPLOAD`.
+Safe bundles include successful scrubbed outputs and exclude private token maps, salts, raw inputs, converted intermediates, detailed reports, manifests, and local-only evidence.
 
-Always inspect the zip before upload.
+## 9. Restore findings locally
 
-## 11. Review checklist
+Use the private token map only inside the secure environment:
 
-Before anything leaves the secure environment:
+```powershell
+Restore-ScrubbedFile `
+  -Path .\out\example.scrubbed.log `
+  -TokenMapCsv .\out\scrub_token_map_DO_NOT_UPLOAD.csv `
+  -OutPath .\out\example.restored.local-only.log
+```
 
-- Confirm the run completed without scrub or conversion failures.
-- Review skipped files in `scrub_run_manifest.json`.
-- Review representative scrubbed rows from each source type.
-- Search scrubbed outputs for known sensitive seed terms, known usernames, known hostnames, tenant names, and case-specific identifiers.
-- Upload only reviewed scrubbed files or a reviewed safe bundle.
-- Keep token maps, salts, raw files, detailed reports, and local manifests private.
+Do not upload restored files.
 
-## 12. Troubleshooting quick notes
+## 10. Help and version commands
 
-| Symptom | What to check |
-|---|---|
-| CAB files are skipped | Add `-ExtractCab` if local extraction is intended. |
-| ETL files are skipped | Add `-ConvertEtl` and run on a system that can read the trace. |
-| Output is missing | Review `scrub_run_manifest.json` for skipped or failed files. |
-| Too many false positives | Try `Balanced` or `Readable`, add allowlists, or tune a profile extension. |
-| Missed local values | Add seed terms, profile rules, or a profile extension. |
-| Tokens do not correlate across runs | Reuse the same salt and trusted token map with `ExistingMap`. |
+```powershell
+Invoke-UniversalScrubber -Help
+Invoke-UniversalScrubber -Version
+Invoke-UniversalScrubber -Interactive
+Get-Help Invoke-UniversalScrubber -Full
+```

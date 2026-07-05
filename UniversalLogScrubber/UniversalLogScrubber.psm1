@@ -75,7 +75,7 @@
 # REGION: Session state (shared by every stage)
 # =====================================================================
 $script:ModuleName       = 'UniversalLogScrubber'
-$script:ModuleVersion    = '1.0.2'
+$script:ModuleVersion    = '1.1.0'
 $script:Salt             = $null
 $script:HmacLength       = 24
 $script:TokenByNorm      = @{}     # normalized-value -> token (the loaded map)
@@ -2361,7 +2361,8 @@ function New-ScrubTokenMap {
                 -LastSeenSource $lastSeen `
                 -SourcePathHash $pathHash
         }
-        Write-Ok "Preserved $($seen.Count) existing token map entr$(if ($seen.Count -eq 1) { 'y' } else { 'ies' })."
+        $entryWord = if ($seen.Count -eq 1) { 'entry' } else { 'entries' }
+        Write-Ok "Preserved $($seen.Count) existing token map $entryWord."
     }
 
     function _AddCorrelatedAlias {
@@ -2534,7 +2535,8 @@ function New-ScrubTokenMap {
             foreach ($donePath in @($fileLevelEligible.ToArray())) {
                 try { $parallelDiscoveryCompletedPaths[[System.IO.Path]::GetFullPath($donePath).ToLowerInvariant()] = $true } catch { $parallelDiscoveryCompletedPaths[[string]$donePath] = $true }
             }
-            Write-Detail ("CSharp process-pool discovery merged {0} worker row(s), {1} new map entr$(if ($fileWorkerAdded -eq 1) { 'y' } else { 'ies' })." -f $fileWorkerRows.Count, $fileWorkerAdded)
+            $fileWorkerEntryWord = if ($fileWorkerAdded -eq 1) { 'entry' } else { 'entries' }
+            Write-Detail ("CSharp process-pool discovery merged {0} worker row(s), {1} new map {2}." -f $fileWorkerRows.Count, $fileWorkerAdded, $fileWorkerEntryWord)
         }
     }
     foreach ($file in $InputPath) {
@@ -2785,28 +2787,15 @@ function Get-ScrubProfile {
         DenyByDefault = $false
     }
 
-    # Generic Windows event log exported to CSV/XML/text.
+    # Windows Event logs are converted locally to event XML text before discovery/scrub.
     $win = [pscustomobject]@{
-        Name = 'WindowsEventCsv'
-        Description = 'Windows event logs exported to CSV.'
-        Format = 'Csv'
-        PassThroughRegex = '^(Id|EventID|Level|LevelDisplayName|TimeCreated|RecordId|LogName|ProviderName|ProviderId|ProviderGuid|Version|Qualifiers|Task|TaskDisplayName|Opcode|OpcodeDisplayName|Keywords|KeywordsDisplayNames|ProcessId|ThreadId|ActivityId|RelatedActivityId)$'
-        ColumnPrefix = @(
-            @{ Pattern = 'sid'; Prefix = 'SID' },
-            @{ Pattern = 'address|ip'; Prefix = 'IP' },
-            @{ Pattern = 'computer|host|workstation|machine'; Prefix = 'DNS' },
-            @{ Pattern = 'account|user|subject|target|caller'; Prefix = 'PRINCIPAL'; DollarComputer = $true },
-            @{ Pattern = 'domain'; Prefix = 'X500' }
-        )
-        FreeTextRegex = '^(Message|EventDataJson)$'
-        DenyByDefault = $false
-        SchemaColumns = ConvertTo-ProfileColumnRules -Rules @(
-            [pscustomobject]@{ Regex = '^(Message|EventDataJson)$'; Action = 'Scan'; Prefix = 'OBJECT' },
-            [pscustomobject]@{ Regex = '^(Id|EventID|Level|LevelDisplayName|TimeCreated|RecordId|LogName|ProviderName|ProviderId|ProviderGuid|Version|Qualifiers|Task|TaskDisplayName|Opcode|OpcodeDisplayName|Keywords|KeywordsDisplayNames|ProcessId|ThreadId|ActivityId|RelatedActivityId)$'; Action = 'PassThrough'; Prefix = 'OBJECT' }
-        ) -DefaultAction 'Scan' -DefaultPrefix 'OBJECT' -Context 'WindowsEventCsv SchemaColumns'
-        WholeColumnRules = ConvertTo-ProfileColumnRules -Rules @(
-            [pscustomobject]@{ Regex = '^(MachineName|ComputerName)$'; Action = 'Scrub'; Prefix = 'COMPUTER' }
-        ) -DefaultAction 'Scrub' -DefaultPrefix 'COMPUTER' -Context 'WindowsEventCsv WholeColumnRules'
+        Name = 'WindowsEventXml'
+        Description = 'Windows event logs converted locally to event XML text.'
+        Format = 'Text'
+        PassThroughRegex = $null
+        ColumnPrefix = @()
+        FreeTextRegex = '.*'
+        DenyByDefault = $true
     }
 
     # Free-form text logs (syslog, application logs, JSON lines, key=value).
@@ -3245,13 +3234,15 @@ function Get-ScrubProfile {
         DenyByDefault=$false; AllowedDomains=@('microsoft.com','windows.net')
     }
 
-    $all = [ordered]@{ Generic=$generic; CA=$ca; WindowsEventCsv=$win; Text=$text;
+    $all = [ordered]@{ Generic=$generic; CA=$ca; WindowsEventXml=$win; Text=$text;
                        Tsv=$tsv; Psv=$psv; IIS=$iis; Syslog=$syslog; Apache=$apache; Cef=$cef; Logfmt=$logfmt;
                        WebAccess=$webAccess; CloudAudit=$cloudAudit; Firewall=$firewallText; FirewallText=$firewallTextAlias; FirewallCsv=$firewallCsv; Vpn=$vpn; Proxy=$proxy;
                        AppJson=$appJson; Database=$database; Container=$container; Kubernetes=$kubernetes; IdentityProvider=$identityProvider;
                        ServiceNow=$serviceNow; IntuneDiagnostics=$intuneDiagnostics; Nexthink=$nexthink; Sccm=$sccm; SccmText=$sccmText; Intune=$intune; Edr=$edr }
     if ($Name) {
         foreach ($k in $all.Keys) { if ($k -ieq $Name) { return $all[$k] } }
+        # Backward-compatible profile alias for older commands/scripts. Not shown in profile listings.
+        if ($Name -ieq 'WindowsEventCsv') { return $win }
         return $null
     }
     return @($all.Values)
@@ -3533,20 +3524,25 @@ function Get-LogFormatRecommendation {
     $firstLine = if ($first.Count -gt 0) { [string]$first[0] } else { '' }
 
     if ($ext -eq '.evtx') {
-        return New-LogFormatRecommendationObject -File $File -DetectedFormat 'EVTX' -SuggestedProfile 'WindowsEventCsv' -Confidence 95 `
+        return New-LogFormatRecommendationObject -File $File -DetectedFormat 'EVTX' -SuggestedProfile 'WindowsEventXml' -Confidence 95 `
             -Reasons @('The .evtx extension identifies a Windows Event Log file.') `
-            -Warnings @('EVTX is binary; the scrubber converts it to CSV before scrubbing.')
+            -Warnings @('EVTX is binary; the scrubber converts it to Windows Event XML text before scrubbing.')
     }
     if ($ext -eq '.etl') {
         return New-LogFormatRecommendationObject -File $File -DetectedFormat 'ETL trace' -SuggestedProfile 'Generic' -Confidence 45 `
             -Reasons @('The .etl extension identifies a Windows Event Trace Log.') `
-            -Warnings @('ETL conversion is opt-in. Use -ConvertEtl to run local CSharp EventLogReader conversion, or convert ETL to CSV/XML/text with your diagnostic workflow before scrubbing.') `
+            -Warnings @('ETL conversion is opt-in. Use -ConvertEtl to run local CSharp EventLogReader conversion, or convert ETL to event XML text with your diagnostic workflow before scrubbing.') `
             -ExtraSwitches '-ConvertEtl'
     }
     if ($ext -eq '.cab') {
         return New-LogFormatRecommendationObject -File $File -DetectedFormat 'CAB archive' -SuggestedProfile 'Text' -Confidence 20 `
             -Reasons @('The .cab extension identifies a cabinet archive, commonly used inside Intune diagnostic bundles.') `
             -Warnings @('CAB archives are skipped unless -ExtractCab is used. Extract approved contents first, or remove archives that are not needed for review.')
+    }
+    if ($ext -in @('.txt','.log','.log_','.xml') -and (Test-UlsWindowsEventXmlText -Text $text -Path ([string]$File.FullName))) {
+        return New-LogFormatRecommendationObject -File $File -DetectedFormat 'Windows Event XML text' -SuggestedProfile 'WindowsEventXml' -Confidence 94 `
+            -Reasons @('The sample contains Windows Event XML elements such as <Event>, <System>, <Provider>, and <EventID>.') `
+            -Warnings $warnings
     }
     if ($ext -eq '.xlsx') {
         return New-LogFormatRecommendationObject -File $File -DetectedFormat 'XLSX' -SuggestedProfile 'Generic' -Confidence 90 `
@@ -3640,8 +3636,9 @@ function Get-LogFormatRecommendation {
                 -Reasons @('CSV header contains AD CS certificate/audit columns.') -Warnings $warnings
         }
         if ($eventHits -ge 3) {
-            return New-LogFormatRecommendationObject -File $File -DetectedFormat 'Windows Event CSV' -SuggestedProfile 'WindowsEventCsv' -Confidence 96 `
-                -Reasons @('CSV header contains Windows Event export columns.') -Warnings $warnings
+            return New-LogFormatRecommendationObject -File $File -DetectedFormat 'Windows Event structured export' -SuggestedProfile 'Generic' -Confidence 70 `
+                -Reasons @('The file contains Windows Event-style export columns.') `
+                -Warnings (@($warnings) + @('Native .evtx/.evt inputs are preferred. They are converted locally to Windows Event XML text before scrubbing.'))
         }
         $enterpriseHint = Get-UlsEnterpriseProfileHint -Columns $columns -Text $text
         if ($enterpriseHint) {
@@ -3814,9 +3811,9 @@ function Invoke-TokenizeWholeValue {
     return (Get-Token -Value $clean -Prefix $Prefix)
 }
 
-function Test-UlsWindowsEventCsvProfile {
+function Test-UlsWindowsEventProfile {
     param($Profile)
-    try { return ($Profile -and ([string]$Profile.Name -ieq 'WindowsEventCsv')) } catch { return $false }
+    try { return ($Profile -and (([string]$Profile.Name -ieq 'WindowsEventXml') -or ([string]$Profile.Name -ieq 'WindowsEventCsv'))) } catch { return $false }
 }
 
 function Test-UlsValidIpv6Address {
@@ -3937,7 +3934,7 @@ function Get-UlsWindowsEventKeyPrefix {
         if ($v -match ':' -and (Test-UlsValidIpv6Address -Value $v)) { return 'IP6' }
         return 'IP'
     }
-    # line 3258 — allow the trailing " Name" / "Name" suffix that Windows event keys use
+    # line 3258 - allow the trailing " Name" / "Name" suffix that Windows event keys use
     if ($k -match '(?i)(computer|machine|workstation|hostname|host|server)(\s*name)?$') { return 'COMPUTER' }
     # if ($k -match '(?i)(computer|machine|workstation|hostname|host\s*name|host)$') { return 'COMPUTER' }
     if ($k -match '(?i)(domain|realm)$') { return 'COMPUTER' }
@@ -4626,7 +4623,7 @@ function Scrub-FieldCore {
             return [string](Invoke-LeakHardeningText -Text $text)
         }
 
-        if (Test-UlsWindowsEventCsvProfile -Profile $Profile) {
+        if (Test-UlsWindowsEventProfile -Profile $Profile) {
             if ($ColumnName -ieq 'EventDataJson') { return [string](Invoke-UlsWindowsEventDataJsonScrub -Text $text -Profile $Profile) }
             if ($ColumnName -ieq 'Message') { return [string](Invoke-UlsWindowsEventMessageHardening -Text $text -ColumnName $ColumnName) }
         }
@@ -5737,7 +5734,7 @@ public sealed class UlsDiscoveryEngine
             && Regex.IsMatch(v, @"(?i)(?:\(Part\d+|\(.*\)\(Part\d+|Part\d+)"))
             return true;
 
-        if (Regex.IsMatch(v, @"(?i)^[A-Z][A-Za-z0-9&+._ -]{2,80}\b(?:Info|Data|Installs|Settings)(?:\s*[-–]\s*[A-Z][A-Za-z0-9&+._ -]+)?(?:\s*\([^)]{0,80}\))*\(?Part\d+\)?$"))
+        if (Regex.IsMatch(v, @"(?i)^[A-Z][A-Za-z0-9&+._ -]{2,80}\b(?:Info|Data|Installs|Settings)(?:\s*[-\u2013]\s*[A-Z][A-Za-z0-9&+._ -]+)?(?:\s*\([^)]{0,80}\))*\(?Part\d+\)?$"))
             return true;
 
         return false;
@@ -8140,6 +8137,62 @@ function Get-UniversalLogScrubberVersionInfo {
     }
 }
 
+function Get-UlsModuleHelpSections {
+    $modulePath = $PSCommandPath
+    if ([string]::IsNullOrWhiteSpace($modulePath)) {
+        try { if ($MyInvocation.MyCommand.Module -and $MyInvocation.MyCommand.Module.Path) { $modulePath = $MyInvocation.MyCommand.Module.Path } } catch { }
+    }
+    if ([string]::IsNullOrWhiteSpace($modulePath) -or -not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+        return [pscustomobject]@{ Synopsis=''; Description=''; Notes='' }
+    }
+
+    $raw = ''
+    try { $raw = [System.IO.File]::ReadAllText($modulePath) } catch { $raw = '' }
+    if ([string]::IsNullOrWhiteSpace($raw) -or $raw -notmatch '(?s)^<#(.*?)#>') {
+        return [pscustomobject]@{ Synopsis=''; Description=''; Notes='' }
+    }
+
+    $sections = [ordered]@{ Synopsis=''; Description=''; Notes='' }
+    $current = $null
+    $buffer = New-Object System.Collections.Generic.List[string]
+
+    $flush = {
+        param([string]$Name, [System.Collections.Generic.List[string]]$Lines)
+        if ([string]::IsNullOrWhiteSpace($Name)) { return }
+        $text = (($Lines.ToArray()) -join "`n").Trim()
+        switch ($Name.ToUpperInvariant()) {
+            'SYNOPSIS'    { $sections['Synopsis'] = $text }
+            'DESCRIPTION' { $sections['Description'] = $text }
+            'NOTES'       { $sections['Notes'] = $text }
+        }
+    }
+
+    $comment = [string]$matches[1]
+    foreach ($line in @($comment -split "`r?`n")) {
+        $trimmed = ([string]$line).Trim()
+        if ($trimmed -match '^\.(SYNOPSIS|DESCRIPTION|NOTES)\s*$') {
+            & $flush $current $buffer
+            $current = $matches[1]
+            $buffer = New-Object System.Collections.Generic.List[string]
+            continue
+        }
+        if ($trimmed -match '^\.[A-Z]+\s*$') {
+            & $flush $current $buffer
+            $current = $null
+            $buffer = New-Object System.Collections.Generic.List[string]
+            continue
+        }
+        if ($current) { [void]$buffer.Add(([string]$line).TrimEnd()) }
+    }
+    & $flush $current $buffer
+
+    return [pscustomobject]@{
+        Synopsis    = $sections['Synopsis']
+        Description = $sections['Description']
+        Notes       = $sections['Notes']
+    }
+}
+
 function Test-JsonNumericNode {
     param($Node)
     return (
@@ -8681,7 +8734,10 @@ function Initialize-ScrubProfileRuntime {
 }
 
 function Import-ScrubProfileFile {
-    param([Parameter(Mandatory)][string]$Path)
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [switch]$Quiet
+    )
     if (-not (Test-Path $Path)) { throw "Profile file not found: $Path" }
     $ext = [System.IO.Path]::GetExtension($Path).ToLowerInvariant()
     $raw = if ($ext -eq '.psd1') { Import-PowerShellDataFile -Path $Path } else { (Get-Content -Path $Path -Raw) | ConvertFrom-Json }
@@ -8731,7 +8787,7 @@ function Import-ScrubProfileFile {
         SeedFiles        = if ($raw.SeedFiles) { @($raw.SeedFiles) } else { @() }
         ProfileRoot      = Split-Path -Parent (Resolve-Path -LiteralPath $Path).Path
     }
-    Write-Ok "Loaded custom profile '$($prof.Name)' from $([System.IO.Path]::GetFileName($Path))"
+    if (-not $Quiet) { Write-Ok "Loaded custom profile '$($prof.Name)' from $([System.IO.Path]::GetFileName($Path))" }
     return $prof
 }
 
@@ -8949,23 +9005,250 @@ function New-ScrubProfileTemplate {
 # =====================================================================
 # REGION: Profile validation, sample analysis, and safe upload bundles
 # =====================================================================
+function Add-UlsProfileValidationMessage {
+    param(
+        [Parameter(Mandatory)]$Messages,
+        [Parameter(Mandatory)][ValidateSet('OK','WARN','ERROR','INFO')][string]$Level,
+        [Parameter(Mandatory)][string]$Message
+    )
+    [void]$Messages.Add([pscustomobject]@{ Level=$Level; Message=$Message })
+}
+
+function Get-UlsProfileValidationRawProperties {
+    param([Parameter(Mandatory)][string]$Path)
+    $resolved = (Resolve-Path -LiteralPath $Path).Path
+    $ext = [System.IO.Path]::GetExtension($resolved).ToLowerInvariant()
+    $raw = if ($ext -eq '.psd1') { Import-PowerShellDataFile -Path $resolved } else { (Get-Content -LiteralPath $resolved -Raw) | ConvertFrom-Json }
+    if ($null -eq $raw) { return @() }
+    if ($raw -is [System.Collections.IDictionary]) { return @($raw.Keys | ForEach-Object { [string]$_ }) }
+    return @($raw.PSObject.Properties.Name | ForEach-Object { [string]$_ })
+}
+
+function Test-UlsProfileReferencedFiles {
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [Parameter(Mandatory)]$Messages
+    )
+    $root = $null
+    try { $root = [string]$Profile.ProfileRoot } catch { $root = $null }
+    foreach ($seedFile in @($Profile.SeedFiles)) {
+        if ([string]::IsNullOrWhiteSpace([string]$seedFile)) { continue }
+        $resolved = Resolve-UlsProfileRelativePath -Path ([string]$seedFile) -BasePath $root
+        if (Test-Path -LiteralPath $resolved -PathType Leaf) { Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message "Seed file found: $seedFile" }
+        else { Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message "Seed file was referenced but not found: $seedFile" }
+    }
+    $allowFiles = @()
+    try { $allowFiles += @($Profile.AllowlistFile) } catch { }
+    try { $allowFiles += @($Profile.AllowlistFiles) } catch { }
+    foreach ($allowFile in @($allowFiles)) {
+        if ([string]::IsNullOrWhiteSpace([string]$allowFile)) { continue }
+        $resolved = Resolve-UlsProfileRelativePath -Path ([string]$allowFile) -BasePath $root
+        if (Test-Path -LiteralPath $resolved -PathType Leaf) { Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message "Allowlist file found: $allowFile" }
+        else { Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message "Allowlist file was referenced but not found: $allowFile" }
+    }
+}
+
+function Test-UlsProfileObjectShape {
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [Parameter(Mandatory)]$Messages,
+        [string]$Source = 'BuiltIn',
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Profile.Name)) { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message 'Profile Name is missing.' }
+    else { Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message "Profile name: $($Profile.Name)" }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Profile.Description)) { Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message 'Profile Description is missing.' }
+
+    $validFormats = @('Auto','Csv','Tsv','Psv','Text','Json','Kv')
+    $fmt = [string]$Profile.Format
+    if ([string]::IsNullOrWhiteSpace($fmt)) { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message 'Profile Format is missing.' }
+    elseif (@($validFormats | Where-Object { $_ -ieq $fmt }).Count -eq 0) { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message "Invalid Format '$fmt'. Expected one of: $($validFormats -join ', ')." }
+    else { Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message "Format: $fmt" }
+
+    try {
+        if ($Profile.PassThroughRegex) { [void](New-ScrubRegex -Pattern ([string]$Profile.PassThroughRegex) -Context 'PassThroughRegex'); Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message 'PassThroughRegex compiled successfully.' }
+    } catch { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message "PassThroughRegex failed to compile: $($_.Exception.Message)" }
+
+    try {
+        if ($Profile.FreeTextRegex) { [void](New-ScrubRegex -Pattern ([string]$Profile.FreeTextRegex) -Context 'FreeTextRegex'); Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message 'FreeTextRegex compiled successfully.' }
+    } catch { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message "FreeTextRegex failed to compile: $($_.Exception.Message)" }
+
+    try { [void](ConvertTo-CustomRegexRules -Rules $Profile.CustomRegexRules); if (@($Profile.CustomRegexRules).Count -gt 0) { Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message ("Custom regex rules compiled: {0}" -f @($Profile.CustomRegexRules).Count) } }
+    catch { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message "CustomRegexRules failed to compile: $($_.Exception.Message)" }
+
+    try { Initialize-ScrubProfileRuntime -Profile $Profile; Add-UlsProfileValidationMessage -Messages $Messages -Level OK -Message 'Profile can be loaded by the scrubber runtime.' }
+    catch { Add-UlsProfileValidationMessage -Messages $Messages -Level ERROR -Message "Profile failed runtime initialization: $($_.Exception.Message)" }
+
+    $ruleCount = @($Profile.ColumnPrefix).Count + @($Profile.SchemaColumns).Count + @($Profile.WholeColumnRules).Count + @($Profile.LabelRules).Count + @($Profile.CustomRegexRules).Count
+    if ($Source -eq 'ProfileFile' -and $ruleCount -eq 0 -and @($Profile.SeedTerms).Count -eq 0 -and @($Profile.SeedFiles).Count -eq 0) {
+        Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message 'Profile file has no explicit rules or seed terms. This can be intentional for broad Text-style profiles, but BYOP profiles usually need at least one rule or seed.'
+    }
+
+    if ($Source -eq 'ProfileFile') {
+        Test-UlsProfileReferencedFiles -Profile $Profile -Messages $Messages
+        try {
+            $known = @('Name','Description','SchemaVersion','Protection','Format','Delimiter','PassThroughRegex','ColumnPrefix','FreeTextRegex','DenyByDefault','AllowedDomains','SchemaColumns','WholeColumnRules','LabelRules','CustomRegexRules','Allowlist','AllowlistFile','AllowlistFiles','SeedTerms','SeedFiles')
+            $rawProps = @(Get-UlsProfileValidationRawProperties -Path $Path)
+            foreach ($prop in @($rawProps | Sort-Object -Unique)) {
+                if (@($known | Where-Object { $_ -ieq $prop }).Count -eq 0) { Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message "Unknown profile property ignored by scrubber: $prop" }
+            }
+        } catch { Add-UlsProfileValidationMessage -Messages $Messages -Level WARN -Message "Could not inspect raw profile properties: $($_.Exception.Message)" }
+    }
+}
+
+function Test-UniversalScrubberProfile {
+    [CmdletBinding(DefaultParameterSetName='BuiltIn')]
+    param(
+        [Parameter(ParameterSetName='BuiltIn', Position=0)]
+        [Alias('Name')]
+        [string]$Profile,
+
+        [Parameter(ParameterSetName='ProfileFile', Mandatory)]
+        [string]$ProfileFile,
+
+        [switch]$Detailed,
+        [switch]$Quiet
+    )
+
+    $messages = New-Object System.Collections.Generic.List[object]
+    $profileObject = $null
+    $source = 'BuiltIn'
+    $resolvedPath = $null
+    $profileName = $Profile
+
+    try {
+        if ($PSCmdlet.ParameterSetName -eq 'ProfileFile') {
+            $source = 'ProfileFile'
+            if (-not (Test-Path -LiteralPath $ProfileFile -PathType Leaf)) { throw "Profile file not found: $ProfileFile" }
+            $resolvedPath = (Resolve-Path -LiteralPath $ProfileFile).Path
+            $profileObject = Import-ScrubProfileFile -Path $resolvedPath -Quiet
+            $profileName = [string]$profileObject.Name
+            Add-UlsProfileValidationMessage -Messages $messages -Level OK -Message "Profile file parsed: $resolvedPath"
+        }
+        else {
+            if ([string]::IsNullOrWhiteSpace($Profile)) { $Profile = 'Generic' }
+            if ($Profile -ieq 'Auto') {
+                Add-UlsProfileValidationMessage -Messages $messages -Level INFO -Message 'Auto is not a profile file. It means no profile is forced and the normal format-aware workflow is used.'
+                Add-UlsProfileValidationMessage -Messages $messages -Level OK -Message 'Auto is valid as an interactive/default workflow setting.'
+                $result = [pscustomobject][ordered]@{
+                    Profile='Auto'; Source='Workflow'; Path=$null; Valid=$true; Errors=0; Warnings=0; RuleCount=0; RegexRules=0; ColumnPrefixRules=0; SchemaColumnRules=0; WholeColumnRules=0; LabelRules=0; SeedTerms=0; SeedFiles=0; AllowlistEntries=0; AllowlistFiles=0; Messages=@($messages.ToArray())
+                }
+                if ($Quiet) { return $true }
+                Write-UlsProfileValidationResult -Result $result -Detailed:$Detailed
+                return $result
+            }
+            $profileObject = Get-ScrubProfile -Name $Profile
+            if (-not $profileObject) { throw "Built-in profile not found: $Profile" }
+            $profileName = [string]$profileObject.Name
+            Add-UlsProfileValidationMessage -Messages $messages -Level OK -Message "Built-in profile found: $profileName"
+        }
+
+        Test-UlsProfileObjectShape -Profile $profileObject -Messages $messages -Source $source -Path $resolvedPath
+    }
+    catch {
+        Add-UlsProfileValidationMessage -Messages $messages -Level ERROR -Message $_.Exception.Message
+    }
+
+    $errors = @($messages.ToArray() | Where-Object { $_.Level -eq 'ERROR' })
+    $warnings = @($messages.ToArray() | Where-Object { $_.Level -eq 'WARN' })
+    $resultProfileName = $null
+    if ($profileObject) { $resultProfileName = [string]$profileObject.Name }
+    elseif (-not [string]::IsNullOrWhiteSpace($profileName)) { $resultProfileName = [string]$profileName }
+
+    $columnPrefixCount = 0
+    $schemaColumnCount = 0
+    $wholeColumnCount = 0
+    $labelRuleCount = 0
+    $regexRuleCount = 0
+    $seedTermCount = 0
+    $seedFileCount = 0
+    $allowlistEntryCount = 0
+    $allowlistFileCount = 0
+    if ($profileObject) {
+        $columnPrefixCount = @($profileObject.ColumnPrefix).Count
+        $schemaColumnCount = @($profileObject.SchemaColumns).Count
+        $wholeColumnCount = @($profileObject.WholeColumnRules).Count
+        $labelRuleCount = @($profileObject.LabelRules).Count
+        $regexRuleCount = @($profileObject.CustomRegexRules).Count
+        $seedTermCount = @($profileObject.SeedTerms).Count
+        $seedFileCount = @($profileObject.SeedFiles).Count
+        $allowlistEntryCount = @($profileObject.Allowlist).Count
+        $allowlistFileCount = @($profileObject.AllowlistFile).Count + @($profileObject.AllowlistFiles).Count
+    }
+    $result = [pscustomobject][ordered]@{
+        Profile = $resultProfileName
+        Source = $source
+        Path = $resolvedPath
+        Valid = (@($errors).Count -eq 0)
+        Errors = @($errors).Count
+        Warnings = @($warnings).Count
+        RuleCount = $columnPrefixCount + $schemaColumnCount + $wholeColumnCount + $labelRuleCount + $regexRuleCount
+        RegexRules = $regexRuleCount
+        ColumnPrefixRules = $columnPrefixCount
+        SchemaColumnRules = $schemaColumnCount
+        WholeColumnRules = $wholeColumnCount
+        LabelRules = $labelRuleCount
+        SeedTerms = $seedTermCount
+        SeedFiles = $seedFileCount
+        AllowlistEntries = $allowlistEntryCount
+        AllowlistFiles = $allowlistFileCount
+        Messages = @($messages.ToArray())
+    }
+
+    if ($Quiet) { return [bool]$result.Valid }
+    Write-UlsProfileValidationResult -Result $result -Detailed:$Detailed
+    return $result
+}
+
+function Write-UlsProfileValidationResult {
+    param(
+        [Parameter(Mandatory)]$Result,
+        [switch]$Detailed
+    )
+
+    Write-Host ""
+    Write-Rule "Profile validation"
+    Write-Host ("Profile      : {0}" -f $Result.Profile) -ForegroundColor Gray
+    Write-Host ("Source       : {0}" -f $Result.Source) -ForegroundColor Gray
+    if (-not [string]::IsNullOrWhiteSpace([string]$Result.Path)) { Write-Host ("Path         : {0}" -f $Result.Path) -ForegroundColor DarkGray }
+    $validColor = if ($Result.Valid) { 'Green' } else { 'Red' }
+    Write-Host ("Valid        : {0}" -f $Result.Valid) -ForegroundColor $validColor
+    Write-Host ("Errors       : {0}" -f $Result.Errors) -ForegroundColor Gray
+    Write-Host ("Warnings     : {0}" -f $Result.Warnings) -ForegroundColor Gray
+    Write-Host ("Rules        : {0} total ({1} regex, {2} column-prefix, {3} schema-column, {4} whole-column, {5} label)" -f $Result.RuleCount, $Result.RegexRules, $Result.ColumnPrefixRules, $Result.SchemaColumnRules, $Result.WholeColumnRules, $Result.LabelRules) -ForegroundColor Gray
+    if ($Result.SeedTerms -gt 0 -or $Result.SeedFiles -gt 0 -or $Result.AllowlistEntries -gt 0 -or $Result.AllowlistFiles -gt 0) {
+        Write-Host ("Seeds/allow  : {0} seed term(s), {1} seed file(s), {2} allowlist entries, {3} allowlist file(s)" -f $Result.SeedTerms, $Result.SeedFiles, $Result.AllowlistEntries, $Result.AllowlistFiles) -ForegroundColor Gray
+    }
+
+    if ($Detailed -or -not $Result.Valid -or $Result.Warnings -gt 0) {
+        Write-Host ""
+        foreach ($msg in @($Result.Messages)) {
+            switch ([string]$msg.Level) {
+                'OK'    { Write-Ok $msg.Message }
+                'WARN'  { Write-Warn $msg.Message }
+                'ERROR' { Write-Fail $msg.Message }
+                default { Write-Info $msg.Message }
+            }
+        }
+    }
+    else {
+        Write-Ok 'Profile validation passed.'
+        Write-Detail 'Use -Detailed for individual validation checks.'
+    }
+}
+
 function Test-ScrubProfile {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$Path,
         [switch]$Quiet
     )
-    try {
-        $prof = Import-ScrubProfileFile -Path $Path
-        Initialize-ScrubProfileRuntime -Profile $prof
-        if (-not $Quiet) { Write-Ok "Profile is valid: $Path" }
-        return $true
-    }
-    catch {
-        if ($Quiet) { return $false }
-        Write-Fail "Profile validation failed: $($_.Exception.Message)"
-        throw
-    }
+    if ($Quiet) { return (Test-UniversalScrubberProfile -ProfileFile $Path -Quiet) }
+    $result = Test-UniversalScrubberProfile -ProfileFile $Path -Detailed
+    if (-not $result.Valid) { throw "Profile validation failed: $Path" }
+    return [bool]$result.Valid
 }
 
 function Get-ProfileBuilderPrefixForName {
@@ -10306,12 +10589,14 @@ function New-SyntheticLog {
             $planted = @('egarcia@corp.local','10.6.6.6','svc.corp.local')
             $preserve = @('level=info')
         }
-        'WindowsEventCsv' {
-            $scrubProfile = 'WindowsEventCsv'
-            $lines = @('RecordId,TimeCreated,ProviderName,MachineName,UserId,Message',
-                       '1,2025-01-01T00:00:00Z,Microsoft-Windows-Security-Auditing,WINDC01,S-1-5-21-111-222-333-1104,"Logon by CORP\fadmin from 10.7.7.7"')
-            $planted = @('S-1-5-21-111-222-333-1104','CORP\fadmin','10.7.7.7')
-            $preserve = @('2025-01-01T00:00:00Z')
+        'WindowsEventXml' {
+            $ext = 'txt'; $scrubProfile = 'WindowsEventXml'
+            $lines = @('<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">',
+                       '  <System><Provider Name="Microsoft-Windows-Security-Auditing"/><EventID>4624</EventID><Computer>WINDC01</Computer><Security UserID="S-1-5-21-111-222-333-1104"/></System>',
+                       '  <EventData><Data Name="TargetUserName">CORP\fadmin</Data><Data Name="IpAddress">10.7.7.7</Data></EventData>',
+                       '</Event>')
+            $planted = @('S-1-5-21-111-222-333-1104','CORP\fadmin','10.7.7.7','WINDC01')
+            $preserve = @('4624')
         }
         'Text' {
             $ext = 'txt'; $scrubProfile = 'Text'
@@ -10407,7 +10692,7 @@ function Invoke-ScrubFile {
 
     $outFull = Resolve-OutPath -Path $OutputPath
     $isWindowsEventXmlText = $false
-    try { $isWindowsEventXmlText = (([string]$Profile.Name -ieq 'IntuneDiagnostics') -and (Test-UlsWindowsEventXmlTextFile -Path $InputPath)) } catch { $isWindowsEventXmlText = $false }
+    try { $isWindowsEventXmlText = (([string]$Profile.Name -in @('IntuneDiagnostics','WindowsEventXml','WindowsEventCsv')) -and (Test-UlsWindowsEventXmlTextFile -Path $InputPath)) } catch { $isWindowsEventXmlText = $false }
 
     if ($isWindowsEventXmlText -and -not $DryRun) {
         return Invoke-UlsWindowsEventXmlTextFileScrub -InputPath $InputPath -OutputPath $outFull -SensitiveTerms $SensitiveTerms
@@ -10529,7 +10814,8 @@ function Invoke-ScrubFile {
     }
     elseif ($format -eq 'Json') {
         $isNd = ($ext -ne '.json')
-        Write-Work "Scrubbing (JSON$(if ($isNd) { ' lines' }), profile '$($Profile.Name)'): $name"
+        $jsonKind = if ($isNd) { 'JSON lines' } else { 'JSON' }
+        Write-Work "Scrubbing ($jsonKind, profile '$($Profile.Name)'): $name"
         $raw = [System.IO.File]::ReadAllText($InputPath)
         $jsonOut = Invoke-ScrubJsonText -Text $raw -IsNdjson:$isNd -Profile $Profile
         $jsonOut = Protect-SensitiveTerms -Text $jsonOut -SensitiveTerms $SensitiveTerms
@@ -10700,12 +10986,1740 @@ function Write-RunManifest {
 }
 
 # =====================================================================
+# REGION: Interactive console v1.1
+#   Additive shell-style workflow. Does not execute arbitrary input.
+# =====================================================================
+function Test-UlsWindowsHost {
+    try { return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) } catch { return $false }
+}
+
+function Test-UlsEnhancedInteractiveConsole {
+    try {
+        if ($PSVersionTable.PSVersion.Major -lt 7) { return $false }
+        if ($Host.Name -match '(?i)ISE') { return $false }
+        if ([System.Console]::IsInputRedirected -or [System.Console]::IsOutputRedirected) { return $false }
+        return $true
+    }
+    catch { return $false }
+}
+
+function Test-UlsAnsiConsole {
+    try {
+        if (-not (Test-UlsEnhancedInteractiveConsole)) { return $false }
+        if ($null -eq $PSStyle) { return $false }
+        return $true
+    }
+    catch { return $false }
+}
+
+function Write-UlsInteractiveAccent {
+    param([string]$Text, [ConsoleColor]$Color = 'Cyan', [switch]$NoNewline)
+    if ($NoNewline) { Write-Host $Text -ForegroundColor $Color -NoNewline }
+    else { Write-Host $Text -ForegroundColor $Color }
+}
+
+function Write-UlsInteractiveCard {
+    param(
+        [Parameter(Mandatory)][string]$Title,
+        [hashtable]$Rows,
+        [ConsoleColor]$BorderColor = 'Cyan'
+    )
+
+    if ($null -eq $Rows) { $Rows = @{} }
+    $width = 68
+    try {
+        if ($Host.UI.RawUI.WindowSize.Width -gt 0) { $width = [Math]::Min([Math]::Max(58, $Host.UI.RawUI.WindowSize.Width - 6), 86) }
+    } catch { }
+
+    $inner = $width - 2
+    $titleText = " $Title "
+    if ($titleText.Length -gt ($inner - 2)) { $titleText = $titleText.Substring(0, $inner - 2) }
+    $topRightCount = $inner - $titleText.Length
+    if ($topRightCount -lt 0) { $topRightCount = 0 }
+    Write-Host ('+' + $titleText + ('-' * $topRightCount) + '+') -ForegroundColor $BorderColor
+
+    foreach ($k in @($Rows.Keys | Sort-Object)) {
+        $label = [string]$k
+        $value = [string]$Rows[$k]
+        if ($label.Length -gt 14) { $label = $label.Substring(0,14) }
+        $line = ('| {0,-14} {1}' -f $label, $value)
+        if ($line.Length -gt ($width - 1)) { $line = $line.Substring(0, $width - 2) }
+        $pad = ($width - 1) - $line.Length
+        if ($pad -lt 0) { $pad = 0 }
+        Write-Host ($line + (' ' * $pad) + '|') -ForegroundColor Gray
+    }
+
+    Write-Host ('+' + ('-' * $inner) + '+') -ForegroundColor $BorderColor
+}
+
+function Show-UlsTopLevelHelp {
+    Write-Host ""
+    Write-Banner
+    Write-Rule "Common usage"
+    Write-Host "  Invoke-UniversalScrubber" -ForegroundColor White
+    Write-Host "  Invoke-UniversalScrubber -Interactive" -ForegroundColor White
+    Write-Host "  Invoke-UniversalScrubber -Path .\logs -WorkDir .\out -Profile Auto -MapSource Discover -TokenMapMode Replace -SaltFile .\salt.txt -NonInteractive" -ForegroundColor White
+    Write-Host "  Invoke-UniversalScrubber -Path .\logs -RecommendOnly -Recurse" -ForegroundColor White
+    Write-Host "  Invoke-UniversalScrubber -Path .\logs -SafeFirstRun -Recurse" -ForegroundColor White
+    Write-Host ""
+    Write-Rule "Helpful flags"
+    Write-Host "  -Interactive       Start the guided ULS command console. This is also the default when no arguments are supplied." -ForegroundColor Gray
+    Write-Host "  -Help              Show this compact help." -ForegroundColor Gray
+    Write-Host "  -Version           Show module version/runtime info." -ForegroundColor Gray
+    Write-Host "  -RecommendOnly     Analyze inputs and recommend a profile without scrubbing." -ForegroundColor Gray
+    Write-Host "  -DryRun            Preview detections without writing scrubbed output." -ForegroundColor Gray
+    Write-Host "  -SafeBundleOut     Package reviewed scrubbed output into a safe upload bundle." -ForegroundColor Gray
+    Write-Host ""
+    Write-Rule "More help"
+    Write-Host "  Get-Help Invoke-UniversalScrubber -Full" -ForegroundColor White
+    Write-Host "  Invoke-UniversalScrubber -Interactive, then type: help" -ForegroundColor White
+    Write-Host ""
+}
+
+function Initialize-UlsInteractiveState {
+    if ($null -ne $script:UlsInteractiveState) { return }
+    $script:UlsInteractiveState = @{
+        Path = $null
+        WorkDir = $null
+        Profile = 'Auto'
+        ProfileFile = $null
+        MapSource = 'Discover'
+        TokenMapMode = 'Replace'
+        TokenMapCsv = $null
+        SaltFile = $null
+        SaltFromEnv = $null
+        Salt = $null
+        Recurse = $false
+        ExtractCab = $false
+        ConvertEtl = $false
+        DryRun = $false
+        ExplainDetections = $false
+        SafeBundleOut = $null
+        ScrubPolicy = 'Balanced'
+        ThrottleLimit = $null
+        LargeFileThresholdMB = $null
+    }
+    $script:UlsInteractiveLastRun = $null
+}
+
+function Reset-UlsInteractiveState {
+    $script:UlsInteractiveState = $null
+    Remove-Variable -Name UlsInteractiveSalt -Scope Global -ErrorAction SilentlyContinue
+    Initialize-UlsInteractiveState
+}
+
+function Get-UlsInteractiveCommandCatalog {
+    return @(
+        [pscustomobject]@{ Name='scrub';     Usage='scrub [options]';             Description='Start a guided scrub job or run one from typed/session options.' },
+        [pscustomobject]@{ Name='recommend'; Usage='recommend [options]';         Description='Analyze a file/folder and recommend a profile without scrubbing.' },
+        [pscustomobject]@{ Name='profile';   Usage='profile [name-or-file]';      Description='List built-in profiles or inspect one built-in/BYOP profile.' },
+        [pscustomobject]@{ Name='validate';  Usage='validate profile [name-or-file]'; Description='Validate a built-in or BYOP profile before scrubbing.' },
+        [pscustomobject]@{ Name='set';       Usage='set [name value]';          Description='Set session defaults, or show current defaults when used by itself.' },
+        [pscustomobject]@{ Name='plan';      Usage='plan [options]';              Description='Preview the Invoke-UniversalScrubber command without running it.' },
+        [pscustomobject]@{ Name='last';      Usage='last [summary|manifest|skipped|failed|command|open]'; Description='Inspect the most recent interactive scrub run.' },
+        [pscustomobject]@{ Name='version';   Usage='version [full]';              Description='Show module version details. Use version full for synopsis, description, and notes.' },
+        [pscustomobject]@{ Name='doctor';    Usage='doctor';                      Description='Check PowerShell version, host, paths, and optional local tooling.' },
+        [pscustomobject]@{ Name='examples';  Usage='examples';                    Description='Show common copy/paste commands.' },
+        [pscustomobject]@{ Name='clear';     Usage='clear';                       Description='Clear the console.' },
+        [pscustomobject]@{ Name='help';      Usage='help [command]';              Description='Show console help.' },
+        [pscustomobject]@{ Name='exit';      Usage='exit';                        Description='Leave the console.' }
+    )
+}
+
+function Show-UlsInteractiveHelp {
+    param([string]$Command)
+    Write-Host ""
+    if ([string]::IsNullOrWhiteSpace($Command)) {
+        Write-Rule "Interactive commands"
+        foreach ($cmd in (Get-UlsInteractiveCommandCatalog)) {
+            Write-Host ("  {0,-10}" -f $cmd.Name) -ForegroundColor Cyan -NoNewline
+            Write-Host $cmd.Description -ForegroundColor Gray
+        }
+        Write-Host ""
+        Write-Host "Type " -NoNewline; Write-Host "help scrub" -ForegroundColor Cyan -NoNewline; Write-Host " for scrub options, " -NoNewline; Write-Host "set" -ForegroundColor Cyan -NoNewline; Write-Host " to show current defaults, " -NoNewline; Write-Host "set path <folder>" -ForegroundColor Cyan -NoNewline; Write-Host " to remember defaults, " -NoNewline; Write-Host "plan" -ForegroundColor Cyan -NoNewline; Write-Host " to preview a command, or " -NoNewline; Write-Host "shortcuts" -ForegroundColor Cyan -NoNewline; Write-Host " for aliases."
+        return
+    }
+
+    switch -Regex ($Command.ToLowerInvariant()) {
+        '^help$' {
+            Write-Rule "help"
+            Write-Host "You might be beyond help if you need help with help." -ForegroundColor Yellow
+            Write-Host "Try plain " -NoNewline; Write-Host "help" -ForegroundColor Cyan -NoNewline; Write-Host " for the command list, or " -NoNewline; Write-Host "help <command>" -ForegroundColor Cyan -NoNewline; Write-Host " for details."
+        }
+        '^scrub$' {
+            Write-Rule "scrub"
+            Write-Host "Starts the guided scrub workflow. With options or session defaults, it previews the equivalent Invoke-UniversalScrubber command before running." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  scrub" -ForegroundColor Gray
+            Write-Host "  scrub -Path .\logs -WorkDir .\out -SaltFile .\salt.txt -Recurse" -ForegroundColor Gray
+            Write-Host "  scrub -Path C:\Diag -WorkDir C:\Scrubbed -Profile IntuneDiagnostics -SaltFile .\salt.txt -ExtractCab -Recurse -SafeBundleOut C:\Scrubbed\safe-upload.zip" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Common options: -Path, -WorkDir, -Profile, -ProfileFile, -MapSource, -TokenMapMode, -Salt, -SaltFile, -SaltFromEnv, -Recurse, -ExtractCab, -ConvertEtl, -DryRun, -SafeBundleOut, -ScrubPolicy, -ThrottleLimit. Use -Profile Auto/default to avoid forcing one profile; use -AutoProfile only for strict single-profile resolution." -ForegroundColor Gray
+        }
+        '^recommend$' {
+            Write-Rule "recommend"
+            Write-Host "Runs local profile recommendation only. No salt, token map, or scrubbed output is produced." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  recommend" -ForegroundColor Gray
+            Write-Host "  recommend -Path .\logs -Recurse" -ForegroundColor Gray
+        }
+        '^(profile|profiles)$' {
+            Write-Rule "profile"
+            Write-Host "Lists built-in profiles or shows details for one built-in or BYOP profile file." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  profile" -ForegroundColor Gray
+            Write-Host "  profile Auto" -ForegroundColor Gray
+            Write-Host "  profile IntuneDiagnostics" -ForegroundColor Gray
+            Write-Host "  profile .\docs\profiles\kv-log-profile.json" -ForegroundColor Gray
+            Write-Host "  profile show Generic" -ForegroundColor Gray
+        }
+        '^(validate|verify|test)$' {
+            Write-Rule "validate"
+            Write-Host "Validates a built-in profile or BYOP profile file without running a scrub job." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  validate profile" -ForegroundColor Gray
+            Write-Host "  validate profile Generic" -ForegroundColor Gray
+            Write-Host "  validate profile .\docs\profiles\kv-log-profile.json" -ForegroundColor Gray
+            Write-Host "  validate profile .\docs\profiles\kv-log-profile.json -Detailed" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Non-interactive equivalent:" -ForegroundColor White
+            Write-Host "  Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Detailed" -ForegroundColor Gray
+        }
+        '^set$' {
+            Write-Rule "set"
+            Write-Host "Stores defaults for this interactive session. These defaults are used by scrub, recommend, and plan until changed or reset." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Use " -NoNewline; Write-Host "set" -ForegroundColor Cyan -NoNewline; Write-Host " by itself to show current session defaults." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  set" -ForegroundColor Gray
+            Write-Host "  set path .\logs" -ForegroundColor Gray
+            Write-Host "  set workdir .\out" -ForegroundColor Gray
+            Write-Host "  set profile Auto" -ForegroundColor Gray
+            Write-Host "  set profile IntuneDiagnostics" -ForegroundColor Gray
+            Write-Host "  set saltfile .\salt.txt" -ForegroundColor Gray
+            Write-Host "  set recurse true" -ForegroundColor Gray
+            Write-Host "  set reset" -ForegroundColor Gray
+        }
+        '^plan$' {
+            Write-Rule "plan"
+            Write-Host "Builds and displays the Invoke-UniversalScrubber command from session defaults plus any typed overrides. It does not run anything. Profile Auto/default leaves the profile unset so the normal format-aware workflow is used." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  plan" -ForegroundColor Gray
+            Write-Host "  plan -Path .\logs -Profile Generic -Recurse" -ForegroundColor Gray
+        }
+        '^last$' {
+            Write-Rule "last"
+            Write-Host "Shows details from the most recent interactive scrub run." -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Examples:" -ForegroundColor White
+            Write-Host "  last" -ForegroundColor Gray
+            Write-Host "  last manifest" -ForegroundColor Gray
+            Write-Host "  last skipped" -ForegroundColor Gray
+            Write-Host "  last failed" -ForegroundColor Gray
+            Write-Host "  last command" -ForegroundColor Gray
+            Write-Host "  last open" -ForegroundColor Gray
+        }
+        '^version$' {
+            Write-Rule "version"
+            Write-Host "Shows module version and runtime details. Use 'version full' for the module synopsis, description, and notes." -ForegroundColor Gray
+        }
+        '^doctor$' {
+            Write-Rule "doctor"
+            Write-Host "Checks the local PowerShell host, PS version, OS, module path, writable folder, optional conversion tooling, and interactive safety behavior." -ForegroundColor Gray
+        }
+        '^(shortcuts|aliases)$' {
+            Write-Rule "Shortcuts"
+            Write-Host "  ?        help" -ForegroundColor Gray
+            Write-Host "  p        profile" -ForegroundColor Gray
+            Write-Host "  vprof    validate profile" -ForegroundColor Gray
+            Write-Host "  rec      recommend" -ForegroundColor Gray
+            Write-Host "  ver      version" -ForegroundColor Gray
+            Write-Host "  cls      clear" -ForegroundColor Gray
+            Write-Host "  q/quit   exit" -ForegroundColor Gray
+        }
+        default {
+            Write-Warn "No detailed help for '$Command'."
+            Show-UlsInteractiveHelp
+        }
+    }
+}
+
+function Split-UlsInteractiveCommandLine {
+    param([string]$Line)
+    if ([string]::IsNullOrWhiteSpace($Line)) { return @() }
+
+    $raw = [string]$Line
+    foreach ($bad in @(';','|','>','<','{','}')) {
+        if ($raw.Contains($bad)) { throw "Unsupported interactive syntax '$bad'. The ULS console only accepts simple known commands and options." }
+    }
+
+    $parseErrors = $null
+    $tokens = [System.Management.Automation.PSParser]::Tokenize($raw, [ref]$parseErrors)
+    if ($parseErrors -and @($parseErrors).Count -gt 0) {
+        $msg = [string]@($parseErrors)[0].Message
+        if ([string]::IsNullOrWhiteSpace($msg)) { $msg = 'Could not parse command line.' }
+        throw "Interactive command parse error: $msg"
+    }
+
+    $allowed = @('Command','CommandArgument','CommandParameter','String','Number','Keyword')
+    $parts = New-Object System.Collections.Generic.List[string]
+    foreach ($t in @($tokens)) {
+        $type = [string]$t.Type
+        if ($type -in @('NewLine','Comment')) { continue }
+        if ($allowed -notcontains $type) { throw "Unsupported interactive syntax token: $type. Use simple command options only." }
+        $content = [string]$t.Content
+        if ([string]::IsNullOrWhiteSpace($content)) { continue }
+        if ($type -eq 'CommandParameter' -and -not $content.StartsWith('-')) { $content = '-' + $content }
+        [void]$parts.Add($content)
+    }
+    return @($parts.ToArray())
+}
+
+function ConvertFrom-UlsInteractiveArgs {
+    param([Alias('Args')][string[]]$CommandArgs)
+    $values = @{}
+    $switches = @{}
+    $positionals = New-Object System.Collections.Generic.List[string]
+    $switchNames = @('recurse','extractcab','convertetl','dryrun','force','keepintermediate','noconfirm','yes','explaindetections','perfreport','perfreportdetailed','discoveryonly','nocorrelate','noconrelate','noco','safefirstrun','recommendonly','autoprofile','full','help','h','detailed','quiet')
+
+    for ($i = 0; $i -lt @($CommandArgs).Count; $i++) {
+        $a = [string]$CommandArgs[$i]
+        if ($a -match '^-{1,2}([^:=]+)(?:[:=](.*))?$') {
+            $name = $matches[1].Trim().ToLowerInvariant()
+            $inline = $matches[2]
+            if ($null -ne $inline -and $inline.Length -gt 0) {
+                $values[$name] = $inline
+            }
+            elseif (($switchNames -contains $name) -or ($i + 1 -ge @($CommandArgs).Count) -or ([string]$CommandArgs[$i + 1]).StartsWith('-')) {
+                $switches[$name] = $true
+            }
+            else {
+                $i++
+                $values[$name] = [string]$CommandArgs[$i]
+            }
+        }
+        else { [void]$positionals.Add($a) }
+    }
+
+    return [pscustomobject]@{ Values=$values; Switches=$switches; Positionals=@($positionals.ToArray()) }
+}
+
+function Get-UlsInteractiveValue {
+    param([hashtable]$Values, [string[]]$Names, [string]$Default)
+    foreach ($n in @($Names)) {
+        if ($Values.ContainsKey($n) -and -not [string]::IsNullOrWhiteSpace([string]$Values[$n])) { return [string]$Values[$n] }
+    }
+    return $Default
+}
+
+function Test-UlsInteractiveSwitch {
+    param([hashtable]$Switches, [string[]]$Names)
+    foreach ($n in @($Names)) { if ($Switches.ContainsKey($n)) { return $true } }
+    return $false
+}
+
+function ConvertTo-UlsPowerShellLiteral {
+    param($Value)
+    if ($null -eq $Value) { return '$null' }
+    if ($Value -is [bool]) { if ($Value) { return '$true' } else { return '$false' } }
+    if ($Value -is [int] -or $Value -is [long] -or $Value -is [double]) { return [string]$Value }
+    if ($Value -is [array]) {
+        $parts = @($Value | ForEach-Object { ConvertTo-UlsPowerShellLiteral -Value $_ })
+        return ('@({0})' -f ($parts -join ', '))
+    }
+    $s = [string]$Value
+    return ("'{0}'" -f ($s -replace "'", "''"))
+}
+
+function Show-UlsInteractiveCommandPreview {
+    param([hashtable]$Parameters)
+    $order = @('Path','WorkDir','Profile','ProfileFile','AutoProfile','ProfileExtensionFile','MapSource','TokenMapMode','TokenMapCsv','SaltFile','SaltFromEnv','Salt','SensitiveTerms','SeedFile','AllowlistFile','ScrubPolicy','Recurse','ExtractCab','ConvertEtl','DryRun','DiscoveryOnly','KeepIntermediate','SafeBundleOut','ExplainDetections','FalsePositiveReport','DetectionSummaryReport','PerfReport','PerfReportDetailed','ThrottleLimit','LargeFileThresholdMB','NoCorrelate','Force')
+    Write-Host ""
+    Write-Rule "Command preview"
+
+    $hasInlineSalt = $false
+    if ($Parameters.ContainsKey('Salt') -and $null -ne $Parameters['Salt'] -and -not [string]::IsNullOrWhiteSpace([string]$Parameters['Salt'])) {
+        $global:UlsInteractiveSalt = [string]$Parameters['Salt']
+        $hasInlineSalt = $true
+        Write-Host '# Salt is set in $global:UlsInteractiveSalt for this PowerShell session and is hidden from preview.' -ForegroundColor DarkGray
+        Write-Host '# Prefer -SaltFile or -SaltFromEnv for reusable commands.' -ForegroundColor DarkGray
+    }
+
+    $usingInteractiveAutoDefault = $false
+    try {
+        $usingInteractiveAutoDefault = (
+            $null -ne $script:UlsInteractiveState -and
+            [string]$script:UlsInteractiveState['Profile'] -ieq 'Auto' -and
+            [string]::IsNullOrWhiteSpace([string]$script:UlsInteractiveState['ProfileFile']) -and
+            -not $Parameters.ContainsKey('Profile') -and
+            -not $Parameters.ContainsKey('ProfileFile') -and
+            -not $Parameters.ContainsKey('AutoProfile')
+        )
+    } catch { $usingInteractiveAutoDefault = $false }
+    if ($usingInteractiveAutoDefault) {
+        Write-Host '# Profile Auto: no single profile is forced; normal format-aware defaults will be used.' -ForegroundColor DarkGray
+        Write-Host '# Use set profile <name> if you want to force one profile for the whole run.' -ForegroundColor DarkGray
+    }
+
+    Write-Host 'Invoke-UniversalScrubber `' -ForegroundColor White
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($k in $order) {
+        if (-not $Parameters.ContainsKey($k)) { continue }
+        $v = $Parameters[$k]
+        if ($v -is [bool]) {
+            if ($v) { [void]$lines.Add(('  -{0} `' -f $k)) }
+        }
+        elseif ($null -ne $v -and -not [string]::IsNullOrWhiteSpace([string]$v)) {
+            if ($k -eq 'Salt') {
+                if ($hasInlineSalt) { [void]$lines.Add('  -Salt $global:UlsInteractiveSalt `') }
+            }
+            else {
+                [void]$lines.Add(('  -{0} {1} `' -f $k, (ConvertTo-UlsPowerShellLiteral -Value $v)))
+            }
+        }
+    }
+    [void]$lines.Add("  -NonInteractive")
+    foreach ($line in $lines) { Write-Host $line -ForegroundColor Gray }
+}
+
+function Get-UlsInteractiveProfileChoice {
+    param([string]$Default)
+    $profiles = @(Get-ScrubProfile)
+    $opts = @()
+    $opts += @{ Key='Auto'; Label='Auto   (default)'; Detail='Do not force a profile; use normal format-aware handling.' }
+    foreach ($p in $profiles) { $opts += @{ Key=$p.Name; Label=$p.Name; Detail=$p.Description } }
+    $opts += @{ Key='__file'; Label='Custom profile file'; Detail='Load a BYOP .json or .psd1 profile.' }
+    $defIdx = 1
+    if (-not [string]::IsNullOrWhiteSpace($Default)) {
+        for ($i = 0; $i -lt $opts.Count; $i++) { if ($opts[$i].Key -ieq $Default) { $defIdx = $i + 1; break } }
+    }
+    return Read-Choice -Prompt 'Profile number' -Options $opts -DefaultIndex $defIdx
+}
+
+function Get-UlsInteractiveBoolFromText {
+    param([string]$Value, [bool]$Default = $false)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $Default }
+    switch -Regex ($Value.Trim().ToLowerInvariant()) {
+        '^(1|true|yes|y|on)$' { return $true }
+        '^(0|false|no|n|off)$' { return $false }
+        default { return $Default }
+    }
+}
+
+function Merge-UlsInteractiveArgsWithSession {
+    param([hashtable]$InitialValues, [hashtable]$InitialSwitches)
+    Initialize-UlsInteractiveState
+    $values = @{}
+    $switches = @{}
+
+    $valueMap = @{
+        Path='path'; WorkDir='workdir'; Profile='profile'; ProfileFile='profilefile'; MapSource='mapsource'; TokenMapMode='tokenmapmode'; TokenMapCsv='tokenmapcsv'; SaltFile='saltfile'; SaltFromEnv='saltfromenv'; Salt='salt'; SafeBundleOut='safebundleout'; ScrubPolicy='scrubpolicy'; ThrottleLimit='throttlelimit'; LargeFileThresholdMB='largefilethresholdmb'
+    }
+    foreach ($key in @($valueMap.Keys)) {
+        if ($script:UlsInteractiveState.ContainsKey($key)) {
+            $v = $script:UlsInteractiveState[$key]
+            if ($null -ne $v -and -not [string]::IsNullOrWhiteSpace([string]$v)) { $values[$valueMap[$key]] = [string]$v }
+        }
+    }
+    $switchMap = @{ Recurse='recurse'; ExtractCab='extractcab'; ConvertEtl='convertetl'; DryRun='dryrun'; ExplainDetections='explaindetections' }
+    foreach ($key in @($switchMap.Keys)) {
+        if ($script:UlsInteractiveState.ContainsKey($key) -and [bool]$script:UlsInteractiveState[$key]) { $switches[$switchMap[$key]] = $true }
+    }
+
+    foreach ($k in @($InitialValues.Keys)) { $values[$k] = $InitialValues[$k] }
+    foreach ($k in @($InitialSwitches.Keys)) { $switches[$k] = $InitialSwitches[$k] }
+    return [pscustomobject]@{ Values=$values; Switches=$switches }
+}
+
+function Test-UlsInteractiveEtlPresent {
+    param([string]$Path, [switch]$Recurse)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    try {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) { return ([System.IO.Path]::GetExtension($Path) -ieq '.etl') }
+        if (Test-Path -LiteralPath $Path -PathType Container) {
+            $item = Get-ChildItem -LiteralPath $Path -File -Filter '*.etl' -Recurse:$Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            return ($null -ne $item)
+        }
+    } catch { }
+    return $false
+}
+
+function Resolve-UlsInteractiveAutoProfile {
+    param(
+        [string]$Path,
+        [bool]$Recurse = $false,
+        [switch]$ShowRecommendations
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return [pscustomobject]@{ Success=$false; Profile=$null; Recommendations=@(); Reason='Path is required to resolve Auto.' }
+    }
+
+    try {
+        $recs = @(Test-LogFormat -Path $Path -Recurse:$Recurse -Quiet)
+    }
+    catch {
+        return [pscustomobject]@{ Success=$false; Profile=$null; Recommendations=@(); Reason=$_.Exception.Message }
+    }
+
+    if ($ShowRecommendations) {
+        Write-LogFormatRecommendationSummary -Recommendations $recs -Title 'Auto profile recommendation'
+    }
+
+    $confident = @($recs | Where-Object { $_.Confidence -ge 80 -and (Get-ScrubProfile -Name $_.SuggestedProfile) })
+    $profiles = @($confident | Select-Object -ExpandProperty SuggestedProfile -Unique)
+    if ($recs.Count -gt 0 -and $confident.Count -eq $recs.Count -and $profiles.Count -eq 1) {
+        return [pscustomobject]@{ Success=$true; Profile=[string]$profiles[0]; Recommendations=$recs; Reason='One high-confidence built-in profile matched all selected inputs.' }
+    }
+
+    $reason = 'Auto could not choose one high-confidence built-in profile for all selected inputs.'
+    if ($recs.Count -eq 0) { $reason = 'No supported inputs were available for profile recommendation.' }
+    elseif ($profiles.Count -gt 1) { $reason = 'Multiple high-confidence profiles were found; split files by type or choose a profile explicitly.' }
+    elseif ($confident.Count -lt $recs.Count) { $reason = 'At least one input did not have a high-confidence built-in profile recommendation.' }
+    return [pscustomobject]@{ Success=$false; Profile=$null; Recommendations=$recs; Reason=$reason }
+}
+
+function Show-UlsInteractiveAutoProfileDetails {
+    Write-Host ""
+    Write-Rule "Profile: Auto"
+    Write-Host "Description : Default behavior. No profile is forced; the scrubber uses normal format-aware handling." -ForegroundColor Gray
+    Write-Host "Source      : Interactive default / no forced -Profile" -ForegroundColor Gray
+    Write-Host "Behavior    : Leaves -Profile unset unless you explicitly choose one. This preserves mixed-folder handling such as EVTX conversion plus text logs." -ForegroundColor Gray
+    Write-Host "Safety      : Does not upload data. Recommendation is based on local file names, extensions, headers, and small local samples." -ForegroundColor Gray
+    Write-Host "Tip         : Use -AutoProfile only when you want strict single-profile resolution. Use set profile <name> to force one profile." -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Usage:" -ForegroundColor White
+    Write-Host "  set profile Auto" -ForegroundColor Gray
+    Write-Host "  plan -Path .\logs -Recurse" -ForegroundColor Gray
+    Write-Host "  scrub -Path .\logs -WorkDir .\out -SaltFile .\salt.txt -Recurse" -ForegroundColor Gray
+}
+
+function New-UlsInteractiveScrubParameters {
+    param([hashtable]$InitialValues, [hashtable]$InitialSwitches, [switch]$NoPrompt)
+
+    $merged = Merge-UlsInteractiveArgsWithSession -InitialValues $InitialValues -InitialSwitches $InitialSwitches
+    $Values = $merged.Values
+    $Switches = $merged.Switches
+
+    if (-not $NoPrompt) {
+        Write-Host ""
+        Write-Rule "Guided scrub job"
+    }
+
+    $path = Get-UlsInteractiveValue -Values $Values -Names @('path','p') -Default $null
+    if ([string]::IsNullOrWhiteSpace($path) -and -not $NoPrompt) { $path = Read-DefaultString -Prompt 'Path to a log file or folder' }
+
+    $defaultWorkDir = Join-Path (Get-Location).Path 'uls-output'
+    $workDir = Get-UlsInteractiveValue -Values $Values -Names @('workdir','out','output') -Default $null
+    if ([string]::IsNullOrWhiteSpace($workDir) -and -not $NoPrompt) { $workDir = Read-DefaultString -Prompt 'Working folder for scrubbed output' -Default $defaultWorkDir }
+
+    $recurse = Test-UlsInteractiveSwitch -Switches $Switches -Names @('recurse')
+    if (-not $NoPrompt -and -not $Switches.ContainsKey('recurse')) {
+        try { if (Test-Path -LiteralPath $path -PathType Container) { $recurse = Read-YesNo -Prompt 'Recurse through subfolders' -Default $true } }
+        catch { }
+    }
+
+    $extractCab = Test-UlsInteractiveSwitch -Switches $Switches -Names @('extractcab','cab')
+    if (-not $NoPrompt -and -not $Switches.ContainsKey('extractcab') -and -not $Switches.ContainsKey('cab')) {
+        $extractCab = Read-YesNo -Prompt 'Extract CAB diagnostics if found' -Default $false
+    }
+
+    $convertEtl = Test-UlsInteractiveSwitch -Switches $Switches -Names @('convertetl','etl')
+    if (-not $NoPrompt -and -not $Switches.ContainsKey('convertetl') -and -not $Switches.ContainsKey('etl')) {
+        if (Test-UlsInteractiveEtlPresent -Path $path -Recurse:$recurse) {
+            Write-Warn 'ETL files were found. Without -ConvertEtl they will be skipped with a warning.'
+            $convertEtl = Read-YesNo -Prompt 'Attempt local ETL conversion on this Windows host' -Default $false
+        }
+    }
+
+    $profile = Get-UlsInteractiveValue -Values $Values -Names @('profile') -Default $null
+    $profileFile = Get-UlsInteractiveValue -Values $Values -Names @('profilefile') -Default $null
+    $strictAutoProfileRequested = (Test-UlsInteractiveSwitch -Switches $Switches -Names @('autoprofile'))
+
+    # Interactive Auto is intentionally not strict AutoProfile.
+    # It means "do not force a profile; use the existing format-aware default workflow."
+    # Strict single-profile resolution remains available only when the user explicitly types -AutoProfile.
+    if ([string]::IsNullOrWhiteSpace($profileFile) -and $profile -ieq 'Auto') {
+        $profile = $null
+    }
+
+    if ([string]::IsNullOrWhiteSpace($profile) -and [string]::IsNullOrWhiteSpace($profileFile) -and -not $strictAutoProfileRequested -and -not $NoPrompt) {
+        # Profile is optional. Leaving it unset lets the scrubber use its proven format-aware defaults.
+        Write-Detail "Profile Auto/default selected; no profile will be forced. Use 'set profile <name>' to force one."
+    }
+
+    $mapSource = Get-UlsInteractiveValue -Values $Values -Names @('mapsource','map') -Default $null
+    if ([string]::IsNullOrWhiteSpace($mapSource)) { $mapSource = 'Discover' }
+    if (-not $NoPrompt -and -not $Values.ContainsKey('mapsource') -and -not $Values.ContainsKey('map')) {
+        $opts = @(
+            @{ Key='Discover'; Label='Discover from these logs'; Detail='Default. Build a fresh map from selected files.' },
+            @{ Key='ExistingMap'; Label='Use an existing token map'; Detail='Keeps tokens consistent with an earlier run.' },
+            @{ Key='AD'; Label='Build from Active Directory'; Detail='Optional. Requires a domain-joined session with read rights.' }
+        )
+        $mapSource = Read-Choice -Prompt 'Map source number' -Options $opts -DefaultIndex 1
+    }
+
+    $tokenMapMode = Get-UlsInteractiveValue -Values $Values -Names @('tokenmapmode','mode') -Default $null
+    if ([string]::IsNullOrWhiteSpace($tokenMapMode)) {
+        if ($mapSource -ieq 'ExistingMap') { $tokenMapMode = 'Merge' }
+        else { $tokenMapMode = 'Replace' }
+    }
+
+    $salt = Get-UlsInteractiveValue -Values $Values -Names @('salt') -Default $null
+    $saltFile = Get-UlsInteractiveValue -Values $Values -Names @('saltfile') -Default $null
+    $saltFromEnv = Get-UlsInteractiveValue -Values $Values -Names @('saltfromenv','envsalt') -Default $null
+    if ([string]::IsNullOrWhiteSpace($salt) -and [string]::IsNullOrWhiteSpace($saltFile) -and [string]::IsNullOrWhiteSpace($saltFromEnv) -and -not $NoPrompt) {
+        Write-Host ""
+        Write-Step 'Salt source'
+        $saltChoice = Read-Choice -Prompt 'Salt source number' -Options @(
+            @{ Key='file'; Label='Salt file'; Detail='Recommended for repeatable local runs.' },
+            @{ Key='prompt'; Label='Enter salt for this session'; Detail='Masked input; not written by ULS.' },
+            @{ Key='env'; Label='Environment variable'; Detail='Read salt from a local environment variable.' }
+        ) -DefaultIndex 1
+        if ($saltChoice -eq 'file') { $saltFile = Read-DefaultString -Prompt 'Salt file path' -Default '.\salt.txt' }
+        elseif ($saltChoice -eq 'env') { $saltFromEnv = Read-DefaultString -Prompt 'Environment variable name' -Default 'ULS_SALT' }
+        else { $salt = Get-SessionSalt }
+    }
+
+    $sensitiveTerms = @()
+    $rawTerms = Get-UlsInteractiveValue -Values $Values -Names @('sensitiveterms','terms') -Default $null
+    if ($null -ne $rawTerms) { $sensitiveTerms = @($rawTerms -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    elseif (-not $NoPrompt -and -not (Test-UlsInteractiveSwitch -Switches $Switches -Names @('noterms'))) {
+        $rawTerms = Read-DefaultString -Prompt 'Optional sensitive seed terms, comma-separated' -Default ''
+        if (-not [string]::IsNullOrWhiteSpace($rawTerms)) { $sensitiveTerms = @($rawTerms -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    }
+
+    $policy = Get-UlsInteractiveValue -Values $Values -Names @('scrubpolicy','policy') -Default 'Balanced'
+    $tokenMapCsv = Get-UlsInteractiveValue -Values $Values -Names @('tokenmapcsv','tokenmap') -Default $null
+    $safeBundleOut = Get-UlsInteractiveValue -Values $Values -Names @('safebundleout','bundle') -Default $null
+    if ([string]::IsNullOrWhiteSpace($safeBundleOut) -and -not $NoPrompt -and -not (Test-UlsInteractiveSwitch -Switches $Switches -Names @('nobundle'))) {
+        if (Read-YesNo -Prompt 'Create a safe upload bundle after scrubbing' -Default $false) {
+            if ([string]::IsNullOrWhiteSpace($workDir)) { $workDir = $defaultWorkDir }
+            $safeBundleOut = Join-Path $workDir 'safe-upload.zip'
+        }
+    }
+
+    $params = @{}
+    if (-not [string]::IsNullOrWhiteSpace($path)) { $params['Path'] = $path }
+    if (-not [string]::IsNullOrWhiteSpace($workDir)) { $params['WorkDir'] = $workDir }
+    if (-not [string]::IsNullOrWhiteSpace($mapSource)) { $params['MapSource'] = $mapSource }
+    if (-not [string]::IsNullOrWhiteSpace($tokenMapMode)) { $params['TokenMapMode'] = $tokenMapMode }
+    if (-not [string]::IsNullOrWhiteSpace($policy)) { $params['ScrubPolicy'] = $policy }
+    if ($sensitiveTerms.Count -gt 0) { $params['SensitiveTerms'] = $sensitiveTerms }
+    if (-not [string]::IsNullOrWhiteSpace($profileFile)) {
+        $params['ProfileFile'] = $profileFile
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($profile)) {
+        if ($profile -ieq 'Auto') { }
+        else { $params['Profile'] = $profile }
+    }
+    elseif ($strictAutoProfileRequested) { $params['AutoProfile'] = $true }
+    if (-not [string]::IsNullOrWhiteSpace($tokenMapCsv)) { $params['TokenMapCsv'] = $tokenMapCsv }
+    if (-not [string]::IsNullOrWhiteSpace($saltFile)) { $params['SaltFile'] = $saltFile }
+    if (-not [string]::IsNullOrWhiteSpace($saltFromEnv)) { $params['SaltFromEnv'] = $saltFromEnv }
+    if (-not [string]::IsNullOrWhiteSpace($salt)) { $params['Salt'] = $salt }
+    if (-not [string]::IsNullOrWhiteSpace($safeBundleOut)) { $params['SafeBundleOut'] = $safeBundleOut }
+    if ($recurse) { $params['Recurse'] = $true }
+    if ($extractCab) { $params['ExtractCab'] = $true }
+    if ($convertEtl) { $params['ConvertEtl'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('dryrun')) { $params['DryRun'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('force')) { $params['Force'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('keepintermediate')) { $params['KeepIntermediate'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('explaindetections')) { $params['ExplainDetections'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('perfreport')) { $params['PerfReport'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('perfreportdetailed')) { $params['PerfReportDetailed'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('discoveryonly')) { $params['DiscoveryOnly'] = $true }
+    if (Test-UlsInteractiveSwitch -Switches $Switches -Names @('nocorrelate','noconrelate','noco')) { $params['NoCorrelate'] = $true }
+
+    $throttle = Get-UlsInteractiveValue -Values $Values -Names @('throttlelimit','throttle') -Default $null
+    if (-not [string]::IsNullOrWhiteSpace($throttle)) { $params['ThrottleLimit'] = [int]$throttle }
+    $largeMb = Get-UlsInteractiveValue -Values $Values -Names @('largefilethresholdmb','large') -Default $null
+    if (-not [string]::IsNullOrWhiteSpace($largeMb)) { $params['LargeFileThresholdMB'] = [int]$largeMb }
+
+    return $params
+}
+
+function Update-UlsInteractiveStateFromParameters {
+    param([hashtable]$Parameters)
+    Initialize-UlsInteractiveState
+    foreach ($k in @('Path','WorkDir','Profile','ProfileFile','MapSource','TokenMapMode','TokenMapCsv','SaltFile','SaltFromEnv','Salt','SafeBundleOut','ScrubPolicy','ThrottleLimit','LargeFileThresholdMB')) {
+        if ($Parameters.ContainsKey($k)) { $script:UlsInteractiveState[$k] = $Parameters[$k] }
+    }
+    foreach ($k in @('Recurse','ExtractCab','ConvertEtl','DryRun','ExplainDetections')) {
+        if ($Parameters.ContainsKey($k)) { $script:UlsInteractiveState[$k] = [bool]$Parameters[$k] }
+    }
+    if ($Parameters.ContainsKey('Profile')) { $script:UlsInteractiveState['ProfileFile'] = $null }
+    if ($Parameters.ContainsKey('ProfileFile')) { $script:UlsInteractiveState['Profile'] = $null }
+    if ($Parameters.ContainsKey('AutoProfile') -and [bool]$Parameters['AutoProfile']) {
+        $script:UlsInteractiveState['Profile'] = 'Auto'
+        $script:UlsInteractiveState['ProfileFile'] = $null
+    }
+}
+
+function Invoke-UlsInteractiveScrubCommand {
+    param([Alias('Args')][string[]]$CommandArgs)
+    $parsed = ConvertFrom-UlsInteractiveArgs -CommandArgs $CommandArgs
+    if (Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('help','h')) { Show-UlsInteractiveHelp -Command 'scrub'; return }
+    $params = New-UlsInteractiveScrubParameters -InitialValues $parsed.Values -InitialSwitches $parsed.Switches
+    Show-UlsInteractiveCommandPreview -Parameters $params
+    Update-UlsInteractiveStateFromParameters -Parameters $params
+    $runNow = Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('yes','noconfirm')
+    if (-not $runNow) { $runNow = Read-YesNo -Prompt 'Run this job now' -Default $true }
+    if (-not $runNow) { Write-Warn 'Scrub job canceled before execution.'; return }
+    $result = Invoke-UniversalScrubber @params -NonInteractive
+    Set-UlsInteractiveLastRun -Parameters $params -Result $result
+    return $result
+}
+
+function Invoke-UlsInteractiveRecommendCommand {
+    param([Alias('Args')][string[]]$CommandArgs)
+    Initialize-UlsInteractiveState
+    $parsed = ConvertFrom-UlsInteractiveArgs -CommandArgs $CommandArgs
+    if (Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('help','h')) { Show-UlsInteractiveHelp -Command 'recommend'; return }
+    $merged = Merge-UlsInteractiveArgsWithSession -InitialValues $parsed.Values -InitialSwitches $parsed.Switches
+    $path = Get-UlsInteractiveValue -Values $merged.Values -Names @('path','p') -Default $null
+    if ([string]::IsNullOrWhiteSpace($path)) { $path = Read-DefaultString -Prompt 'Path to analyze' }
+    $recurse = Test-UlsInteractiveSwitch -Switches $merged.Switches -Names @('recurse')
+    if (-not $merged.Switches.ContainsKey('recurse')) {
+        try { if (Test-Path -LiteralPath $path -PathType Container) { $recurse = Read-YesNo -Prompt 'Recurse through subfolders' -Default $true } } catch { }
+    }
+    $script:UlsInteractiveState['Path'] = $path
+    $script:UlsInteractiveState['Recurse'] = $recurse
+    $recs = Test-LogFormat -Path $path -Recurse:$recurse -Quiet
+    Write-LogFormatRecommendationSummary -Recommendations $recs -Title 'Recommendation summary'
+    return $recs
+}
+
+function Show-UlsInteractivePlan {
+    param([Alias('Args')][string[]]$CommandArgs)
+    $parsed = ConvertFrom-UlsInteractiveArgs -CommandArgs $CommandArgs
+    if (Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('help','h')) { Show-UlsInteractiveHelp -Command 'plan'; return }
+    $params = New-UlsInteractiveScrubParameters -InitialValues $parsed.Values -InitialSwitches $parsed.Switches -NoPrompt
+    $missing = New-Object System.Collections.Generic.List[string]
+    if (-not $params.ContainsKey('Path')) { [void]$missing.Add('Path') }
+    if (-not $params.ContainsKey('WorkDir')) { [void]$missing.Add('WorkDir') }
+    $sessionProfileAuto = $false
+    try {
+        $sessionProfileAuto = ($null -ne $script:UlsInteractiveState -and [string]$script:UlsInteractiveState['Profile'] -ieq 'Auto')
+    } catch { $sessionProfileAuto = $false }
+    if (-not ($params.ContainsKey('Profile') -or $params.ContainsKey('ProfileFile') -or $params.ContainsKey('AutoProfile') -or $sessionProfileAuto)) { [void]$missing.Add('Profile/ProfileFile/Auto') }
+    if (-not ($params.ContainsKey('Salt') -or $params.ContainsKey('SaltFile') -or $params.ContainsKey('SaltFromEnv') -or $params.ContainsKey('DryRun'))) { [void]$missing.Add('Salt/SaltFile/SaltFromEnv') }
+    if ($missing.Count -gt 0) { Write-Warn ("Plan is missing: {0}" -f ($missing.ToArray() -join ', ')) }
+    Show-UlsInteractiveCommandPreview -Parameters $params
+    return
+}
+
+function Format-UlsInteractiveRuleSample {
+    param($Rule, [string]$Kind = 'Rule')
+    if ($null -eq $Rule) { return $null }
+    $name = [string](Get-UlsObjectPropertyValue -Object $Rule -Name 'Name' -Default '')
+    $pattern = [string](Get-UlsObjectPropertyValue -Object $Rule -Name 'Pattern' -Default '')
+    $prefix = [string](Get-UlsObjectPropertyValue -Object $Rule -Name 'Prefix' -Default '')
+    $action = [string](Get-UlsObjectPropertyValue -Object $Rule -Name 'Action' -Default '')
+    $labels = @(Get-UlsObjectPropertyArray -Object $Rule -Name 'Labels')
+    $regex = [string](Get-UlsObjectPropertyValue -Object $Rule -Name 'Regex' -Default '')
+
+    $parts = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($name)) { [void]$parts.Add($name) }
+    if (-not [string]::IsNullOrWhiteSpace($pattern)) { [void]$parts.Add("Pattern=$pattern") }
+    if ($labels.Count -gt 0) { [void]$parts.Add("Labels=" + ((@($labels) | Select-Object -First 4) -join ', ')) }
+    if (-not [string]::IsNullOrWhiteSpace($regex)) {
+        $regexDisplay = $regex
+        if ($regexDisplay.Length -gt 72) { $regexDisplay = $regexDisplay.Substring(0,72) + '...' }
+        [void]$parts.Add("Regex=" + $regexDisplay)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($action)) { [void]$parts.Add("Action=$action") }
+    if (-not [string]::IsNullOrWhiteSpace($prefix)) { [void]$parts.Add("Prefix=$prefix") }
+    $s = (@($parts.ToArray()) -join '; ')
+    if ([string]::IsNullOrWhiteSpace($s)) { $s = $Kind }
+    return $s
+}
+
+function Write-UlsInteractiveRuleSummary {
+    param(
+        [string]$Title,
+        $Rules,
+        [string]$Kind = 'Rule',
+        [int]$Max = 5
+    )
+    $items = @($Rules)
+    if ($items.Count -eq 0) { return }
+    Write-Host ("{0,-13}: {1}" -f $Title, $items.Count) -ForegroundColor Gray
+    foreach ($r in @($items | Select-Object -First $Max)) {
+        $line = Format-UlsInteractiveRuleSample -Rule $r -Kind $Kind
+        if ($line) { Write-Host ("  - {0}" -f $line) -ForegroundColor DarkGray }
+    }
+    if ($items.Count -gt $Max) { Write-Host ("  ... {0} more" -f ($items.Count - $Max)) -ForegroundColor DarkGray }
+}
+
+function Resolve-UlsInteractiveProfileSpec {
+    param([Parameter(Mandatory)][string]$NameOrPath)
+
+    $spec = ([string]$NameOrPath).Trim()
+    if ($spec.Length -ge 2 -and (($spec[0] -eq '"' -and $spec[$spec.Length-1] -eq '"') -or ($spec[0] -eq "'" -and $spec[$spec.Length-1] -eq "'"))) {
+        $spec = $spec.Substring(1, $spec.Length - 2)
+    }
+
+    if ($spec -ieq 'Auto') {
+        $autoProfile = [pscustomobject]@{
+            Name = 'Auto'
+            Description = 'Automatically recommends one built-in profile from the selected input path.'
+            Format = 'Auto'
+            DenyByDefault = $true
+            ColumnPrefix = @()
+            SchemaColumns = @()
+            WholeColumnRules = @()
+            LabelRules = @()
+            CustomRegexRules = @()
+        }
+        return [pscustomobject]@{ Profile=$autoProfile; Source='Auto'; Path=$null; Matches=@() }
+    }
+
+    $looksLikePath = $false
+    try {
+        if ([System.IO.Path]::IsPathRooted($spec) -or $spec -match '[\\/]' -or $spec -match '(?i)\.(json|psd1)$') { $looksLikePath = $true }
+    } catch { }
+
+    if ($looksLikePath -or (Test-Path -LiteralPath $spec -PathType Leaf -ErrorAction SilentlyContinue)) {
+        try {
+            $prof = Import-ScrubProfileFile -Path $spec
+            return [pscustomobject]@{ Profile=$prof; Source='ProfileFile'; Path=(Resolve-Path -LiteralPath $spec).Path; Matches=@() }
+        }
+        catch {
+            return [pscustomobject]@{ Profile=$null; Source='ProfileFile'; Path=$spec; Error=$_.Exception.Message; Matches=@() }
+        }
+    }
+
+    $prof = Get-ScrubProfile -Name $spec
+    if ($prof) { return [pscustomobject]@{ Profile=$prof; Source='BuiltIn'; Path=$null; Matches=@() } }
+
+    $matches = @(Get-ScrubProfile | Where-Object { $_.Name -like "$spec*" } | Sort-Object Name)
+    if ($matches.Count -eq 1) { return [pscustomobject]@{ Profile=$matches[0]; Source='BuiltIn'; Path=$null; Matches=@() } }
+    if ($matches.Count -gt 1) { return [pscustomobject]@{ Profile=$null; Source='BuiltIn'; Path=$null; Matches=$matches } }
+    return [pscustomobject]@{ Profile=$null; Source='BuiltIn'; Path=$null; Matches=@() }
+}
+
+function Get-UlsInteractiveProfileBehaviorSummary {
+    param($Profile, [string]$Source = 'BuiltIn')
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $format = ''
+    try { $format = [string]$Profile.Format } catch { $format = '' }
+    $name = ''
+    try { $name = [string]$Profile.Name } catch { $name = '' }
+
+    if ($Source -eq 'ProfileFile') {
+        [void]$lines.Add('Custom/BYOP profile loaded from disk. Use this when local field names, tenant aliases, or vendor-specific labels need explicit handling.')
+    }
+    if ($name -ieq 'WindowsEventXml') {
+        [void]$lines.Add('Windows EVTX/EVT/ETL workflows convert locally to event XML text before discovery and scrub.')
+    }
+    elseif ($name -ieq 'IntuneDiagnostics') {
+        [void]$lines.Add('Designed for extracted Intune diagnostic bundles, MDM reports, registry exports, event XML text, and mixed diagnostic output.')
+    }
+    elseif ($name -ieq 'Generic') {
+        [void]$lines.Add('Best fallback when the log source is unknown. It favors broad detection over source-specific readability.')
+    }
+
+    try {
+        if ($Profile.DenyByDefault) {
+            [void]$lines.Add('Deny-by-default profile: fields are broadly scanned for identifier shapes unless rules explicitly preserve low-signal values.')
+        }
+        else {
+            [void]$lines.Add('Field-aware profile: known low-risk fields can pass through while sensitive columns and free-text areas are scanned.')
+        }
+    } catch { }
+
+    switch -Regex ($format) {
+        '^(Csv|Tsv|Psv)$' { [void]$lines.Add('Table-style input: column names help decide what should be tokenized, preserved, or scanned more deeply.'); break }
+        '^Json'           { [void]$lines.Add('JSON-style input: keys are preserved and string values are scrubbed using key/field hints.'); break }
+        '^Text$'          { [void]$lines.Add('Text-style input: line content is scanned directly and map-driven replacement preserves cross-file correlation.'); break }
+        '^Auto$'          { [void]$lines.Add('Auto format: file extension/content decide whether the input is treated as table, JSON, or text.'); break }
+    }
+
+    return @($lines.ToArray())
+}
+
+function Show-UlsInteractiveProfileDetails {
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [string]$Source = 'BuiltIn',
+        [string]$Path
+    )
+
+    Write-Rule ("Profile: {0}" -f $Profile.Name)
+    Write-Host ("Description  : {0}" -f $Profile.Description) -ForegroundColor Gray
+    if (-not [string]::IsNullOrWhiteSpace($Source)) { Write-Host ("Source       : {0}" -f $Source) -ForegroundColor Gray }
+    if (-not [string]::IsNullOrWhiteSpace($Path)) { Write-Host ("Path         : {0}" -f $Path) -ForegroundColor Gray }
+    try { if ($Profile.SchemaVersion -ne $null) { Write-Host ("Schema       : {0}" -f $Profile.SchemaVersion) -ForegroundColor Gray } } catch { }
+    Write-Host ("Format       : {0}" -f $Profile.Format) -ForegroundColor Gray
+    try {
+        if ($Profile.Delimiter -ne $null -and [string]$Profile.Delimiter -ne '') {
+            $delimiterDisplay = [string]$Profile.Delimiter
+            if ($delimiterDisplay -eq "`t") { $delimiterDisplay = '<tab>' }
+            Write-Host ("Delimiter    : {0}" -f $delimiterDisplay) -ForegroundColor Gray
+        }
+    } catch { }
+    try { if ($Profile.DenyByDefault -ne $null) { Write-Host ("Deny default : {0}" -f $Profile.DenyByDefault) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.PassThroughRegex) { Write-Host ("Pass-through : {0}" -f $Profile.PassThroughRegex) -ForegroundColor DarkGray } } catch { }
+    try { if ($Profile.FreeTextRegex) { Write-Host ("Free text    : {0}" -f $Profile.FreeTextRegex) -ForegroundColor DarkGray } } catch { }
+    try {
+        $profileProperties = @($Profile.PSObject.Properties.Name | Sort-Object)
+        if ($profileProperties.Count -gt 0) {
+            Write-Host ("Properties   : {0}" -f ((@($profileProperties) | Select-Object -First 12) -join ', ')) -ForegroundColor DarkGray
+        }
+    } catch { }
+
+    try { if ($Profile.AllowedDomains -and $Profile.AllowedDomains.Count -gt 0) { Write-Host ("Allowed      : {0}" -f ((@($Profile.AllowedDomains) | Select-Object -First 8) -join ', ')) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.SeedTerms -and $Profile.SeedTerms.Count -gt 0) { Write-Host ("Seed terms   : {0}" -f $Profile.SeedTerms.Count) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.SeedFiles -and $Profile.SeedFiles.Count -gt 0) { Write-Host ("Seed files   : {0}" -f ((@($Profile.SeedFiles) | Select-Object -First 5) -join ', ')) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.Allowlist -and $Profile.Allowlist.Count -gt 0) { Write-Host ("Allowlist    : {0}" -f $Profile.Allowlist.Count) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.AllowlistFile -and $Profile.AllowlistFile.Count -gt 0) { Write-Host ("Allow files  : {0}" -f ((@($Profile.AllowlistFile) | Select-Object -First 5) -join ', ')) -ForegroundColor Gray } } catch { }
+    try { if ($Profile.AllowlistFiles -and $Profile.AllowlistFiles.Count -gt 0) { Write-Host ("Allow files  : {0}" -f ((@($Profile.AllowlistFiles) | Select-Object -First 5) -join ', ')) -ForegroundColor Gray } } catch { }
+
+    Write-Host ""
+    Write-Host "Behavior:" -ForegroundColor White
+    $behaviorLines = @(Get-UlsInteractiveProfileBehaviorSummary -Profile $Profile -Source $Source)
+    foreach ($behaviorLine in $behaviorLines) { Write-Host ("  - {0}" -f $behaviorLine) -ForegroundColor Gray }
+
+    Write-Host ""
+    Write-Host "Rule overview:" -ForegroundColor White
+    try { Write-Host ("  Column-prefix rules : {0}" -f @($Profile.ColumnPrefix).Count) -ForegroundColor Gray } catch { }
+    try { Write-Host ("  Schema column rules  : {0}" -f @($Profile.SchemaColumns).Count) -ForegroundColor Gray } catch { }
+    try { Write-Host ("  Whole-column rules   : {0}" -f @($Profile.WholeColumnRules).Count) -ForegroundColor Gray } catch { }
+    try { Write-Host ("  Label rules          : {0}" -f @($Profile.LabelRules).Count) -ForegroundColor Gray } catch { }
+    try { Write-Host ("  Custom regex rules   : {0}" -f @($Profile.CustomRegexRules).Count) -ForegroundColor Gray } catch { }
+
+    Write-Host ""
+    Write-UlsInteractiveRuleSummary -Title 'Column rules' -Rules $Profile.ColumnPrefix -Kind 'ColumnPrefix'
+    Write-UlsInteractiveRuleSummary -Title 'Schema cols' -Rules $Profile.SchemaColumns -Kind 'SchemaColumns'
+    Write-UlsInteractiveRuleSummary -Title 'Whole cols' -Rules $Profile.WholeColumnRules -Kind 'WholeColumnRules'
+    Write-UlsInteractiveRuleSummary -Title 'Label rules' -Rules $Profile.LabelRules -Kind 'LabelRules'
+    Write-UlsInteractiveRuleSummary -Title 'Regex rules' -Rules $Profile.CustomRegexRules -Kind 'CustomRegexRules'
+
+    Write-Host ""
+    Write-Host "Usage:" -ForegroundColor White
+    if ($Source -eq 'ProfileFile' -and -not [string]::IsNullOrWhiteSpace($Path)) {
+        Write-Host ('  scrub -Path .\logs -WorkDir .\out -ProfileFile "{0}" -SaltFile .\salt.txt -Recurse' -f $Path) -ForegroundColor Gray
+    }
+    else {
+        Write-Host ("  scrub -Path .\logs -WorkDir .\out -Profile {0} -SaltFile .\salt.txt -Recurse" -f $Profile.Name) -ForegroundColor Gray
+    }
+}
+
+function Show-UlsInteractiveProfiles {
+    param([Alias('Args')][string[]]$CommandArgs)
+    $name = $null
+    if ($CommandArgs -and $CommandArgs.Count -gt 0) {
+        if ($CommandArgs[0] -ieq 'show' -and $CommandArgs.Count -gt 1) { $name = ($CommandArgs[1..($CommandArgs.Count-1)] -join ' ') }
+        elseif ($CommandArgs[0] -notmatch '^-') { $name = ($CommandArgs -join ' ') }
+    }
+
+    Write-Host ""
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        Write-Rule "Profiles"
+        Write-Host ("  {0,-20}" -f 'Auto') -ForegroundColor Cyan -NoNewline
+        Write-Host 'Automatically recommend one high-confidence built-in profile from the input path.' -ForegroundColor Gray
+        foreach ($p in @(Get-ScrubProfile | Sort-Object Name)) {
+            Write-Host ("  {0,-20}" -f $p.Name) -ForegroundColor Cyan -NoNewline
+            Write-Host $p.Description -ForegroundColor Gray
+        }
+        Write-Host ""
+        Write-Host "Use " -NoNewline; Write-Host "profile <name>" -ForegroundColor Cyan -NoNewline; Write-Host " to inspect one profile, or " -NoNewline; Write-Host "profile <profile.json>" -ForegroundColor Cyan -NoNewline; Write-Host " to inspect a BYOP profile file."
+        return
+    }
+
+    $resolved = Resolve-UlsInteractiveProfileSpec -NameOrPath $name
+    if ($resolved.Profile) {
+        Show-UlsInteractiveProfileDetails -Profile $resolved.Profile -Source $resolved.Source -Path $resolved.Path
+        return
+    }
+
+    if ($resolved.Matches -and @($resolved.Matches).Count -gt 1) {
+        Write-Warn ("Profile name is ambiguous: {0}" -f $name)
+        Write-Info ("Matches: {0}" -f ((@($resolved.Matches | ForEach-Object { $_.Name })) -join ', '))
+        return
+    }
+
+    if ($resolved.Error) { Write-Warn ("Profile file could not be loaded: {0}" -f $resolved.Error); return }
+    Write-Warn "Profile not found: $name"
+}
+
+function Write-UlsMultilineText {
+    param([string]$Text, [ConsoleColor]$Color = 'Gray')
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    foreach ($line in @($Text -split "`r?`n")) {
+        if ([string]::IsNullOrWhiteSpace($line)) { Write-Host "" }
+        else { Write-Host $line.TrimEnd() -ForegroundColor $Color }
+    }
+}
+
+function Show-UlsInteractiveVersion {
+    param([switch]$Full)
+
+    $info = Get-UniversalLogScrubberVersionInfo
+    Write-Host ""
+    Write-Rule "Version"
+    Write-Host ("Name        : {0}" -f $info.Name) -ForegroundColor Gray
+    Write-Host ("Version     : {0}" -f $info.Version) -ForegroundColor Gray
+    Write-Host ("PowerShell  : {0} ({1})" -f $info.PowerShellVersion, $info.PSEdition) -ForegroundColor Gray
+    Write-Host ("Host        : {0}" -f $Host.Name) -ForegroundColor Gray
+    if (-not [string]::IsNullOrWhiteSpace($info.ModulePath)) { Write-Host ("Module path : {0}" -f $info.ModulePath) -ForegroundColor DarkGray }
+    if (-not [string]::IsNullOrWhiteSpace($info.ManifestPath)) { Write-Host ("Manifest    : {0}" -f $info.ManifestPath) -ForegroundColor DarkGray }
+
+    if (-not $Full) {
+        Write-Host ""
+        Write-Host "Use " -NoNewline; Write-Host "version full" -ForegroundColor Cyan -NoNewline; Write-Host " for synopsis, description, and notes."
+        return
+    }
+
+    $sections = Get-UlsModuleHelpSections
+    if (-not [string]::IsNullOrWhiteSpace($sections.Synopsis)) {
+        Write-Host ""
+        Write-Rule "Synopsis"
+        Write-UlsMultilineText -Text $sections.Synopsis -Color Gray
+    }
+    if (-not [string]::IsNullOrWhiteSpace($sections.Description)) {
+        Write-Host ""
+        Write-Rule "Description"
+        Write-UlsMultilineText -Text $sections.Description -Color Gray
+    }
+    if (-not [string]::IsNullOrWhiteSpace($sections.Notes)) {
+        Write-Host ""
+        Write-Rule "Notes"
+        Write-UlsMultilineText -Text $sections.Notes -Color Gray
+    }
+}
+
+function Get-UlsInteractiveDisplayValue {
+    param($Value, [switch]$Secret)
+    if ($Secret) {
+        if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return '<not set>' }
+        return '<set, hidden>'
+    }
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return '<not set>' }
+    return [string]$Value
+}
+
+function Show-UlsInteractiveSession {
+    Initialize-UlsInteractiveState
+    $rows = @{
+        'Path' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['Path'])
+        'WorkDir' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['WorkDir'])
+        'Profile' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['Profile'])
+        'ProfileFile' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['ProfileFile'])
+        'MapSource' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['MapSource'])
+        'MapMode' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['TokenMapMode'])
+        'SaltFile' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['SaltFile'])
+        'Salt' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['Salt'] -Secret)
+        'Recurse' = [string][bool]$script:UlsInteractiveState['Recurse']
+        'ExtractCab' = [string][bool]$script:UlsInteractiveState['ExtractCab']
+        'ConvertEtl' = [string][bool]$script:UlsInteractiveState['ConvertEtl']
+        'DryRun' = [string][bool]$script:UlsInteractiveState['DryRun']
+        'SafeBundle' = (Get-UlsInteractiveDisplayValue $script:UlsInteractiveState['SafeBundleOut'])
+    }
+    if (Test-UlsEnhancedInteractiveConsole) { Write-UlsInteractiveCard -Title 'Current session' -Rows $rows }
+    else {
+        Write-Host ""
+        Write-Rule "Current session"
+        foreach ($k in @($rows.Keys | Sort-Object)) { Write-Host ("  {0,-12} {1}" -f $k, $rows[$k]) -ForegroundColor Gray }
+    }
+}
+
+function Set-UlsInteractiveSessionValue {
+    param([Alias('Args')][string[]]$CommandArgs)
+    Initialize-UlsInteractiveState
+    if (-not $CommandArgs -or $CommandArgs.Count -eq 0) { Show-UlsInteractiveSession; return }
+
+    $key = ([string]$CommandArgs[0]).Trim().ToLowerInvariant()
+    if ($key -in @('help','-help','--help','-h')) { Show-UlsInteractiveHelp -Command 'set'; return }
+    if ($key -in @('reset','clearall','defaults')) { Reset-UlsInteractiveState; Write-Ok 'Interactive session defaults reset.'; return }
+    if ($key -eq 'clear') {
+        if ($CommandArgs.Count -lt 2) { Write-Warn 'Use: set clear <name>'; return }
+        $clearKey = ([string]$CommandArgs[1]).Trim().ToLowerInvariant()
+        $mapClear = @{
+            path='Path'; workdir='WorkDir'; out='WorkDir'; profile='Profile'; profilefile='ProfileFile'; mapsource='MapSource'; map='MapSource'; tokenmapmode='TokenMapMode'; mode='TokenMapMode'; tokenmap='TokenMapCsv'; tokenmapcsv='TokenMapCsv'; saltfile='SaltFile'; salt='Salt'; saltfromenv='SaltFromEnv'; envsalt='SaltFromEnv'; safebundleout='SafeBundleOut'; bundle='SafeBundleOut'; scrubpolicy='ScrubPolicy'; policy='ScrubPolicy'; throttle='ThrottleLimit'; throttlelimit='ThrottleLimit'; large='LargeFileThresholdMB'; largefilethresholdmb='LargeFileThresholdMB'
+        }
+        if ($mapClear.ContainsKey($clearKey)) { $script:UlsInteractiveState[$mapClear[$clearKey]] = $null; if ($mapClear[$clearKey] -eq 'Salt') { Remove-Variable -Name UlsInteractiveSalt -Scope Global -ErrorAction SilentlyContinue }; Write-Ok ("Cleared {0}." -f $mapClear[$clearKey]); return }
+        $boolClearMap = @{ recurse='Recurse'; extractcab='ExtractCab'; convertetl='ConvertEtl'; dryrun='DryRun'; explaindetections='ExplainDetections' }
+        if ($boolClearMap.ContainsKey($clearKey)) { $script:UlsInteractiveState[$boolClearMap[$clearKey]] = $false; Write-Ok ("Cleared {0}." -f $boolClearMap[$clearKey]); return }
+        Write-Warn "Unknown session setting: $clearKey"
+        return
+    }
+
+    if ($CommandArgs.Count -lt 2) { Write-Warn 'Use: set <name> <value>, set clear <name>, or set reset.'; return }
+    $value = ($CommandArgs[1..($CommandArgs.Count-1)] -join ' ')
+
+    switch -Regex ($key) {
+        '^(path|p)$' { $script:UlsInteractiveState['Path'] = $value; Write-Ok "Path set." }
+        '^(workdir|out|output)$' { $script:UlsInteractiveState['WorkDir'] = $value; Write-Ok "WorkDir set." }
+        '^profile$' { $script:UlsInteractiveState['Profile'] = $value; $script:UlsInteractiveState['ProfileFile'] = $null; if ($value -ieq 'Auto') { Write-Ok 'Profile set to Auto/default. No profile will be forced during plan/scrub.' } else { Write-Ok "Profile set." } }
+        '^profilefile$' { $script:UlsInteractiveState['ProfileFile'] = $value; $script:UlsInteractiveState['Profile'] = $null; Write-Ok "ProfileFile set." }
+        '^(mapsource|map)$' { $script:UlsInteractiveState['MapSource'] = $value; Write-Ok "MapSource set." }
+        '^(tokenmapmode|mode)$' { $script:UlsInteractiveState['TokenMapMode'] = $value; Write-Ok "TokenMapMode set." }
+        '^(tokenmapcsv|tokenmap)$' { $script:UlsInteractiveState['TokenMapCsv'] = $value; Write-Ok "TokenMapCsv set." }
+        '^saltfile$' { $script:UlsInteractiveState['SaltFile'] = $value; $script:UlsInteractiveState['Salt'] = $null; $script:UlsInteractiveState['SaltFromEnv'] = $null; Remove-Variable -Name UlsInteractiveSalt -Scope Global -ErrorAction SilentlyContinue; Write-Ok "SaltFile set." }
+        '^(saltfromenv|envsalt)$' { $script:UlsInteractiveState['SaltFromEnv'] = $value; $script:UlsInteractiveState['Salt'] = $null; $script:UlsInteractiveState['SaltFile'] = $null; Remove-Variable -Name UlsInteractiveSalt -Scope Global -ErrorAction SilentlyContinue; Write-Ok "SaltFromEnv set." }
+        '^salt$' { $script:UlsInteractiveState['Salt'] = $value; $global:UlsInteractiveSalt = $value; $script:UlsInteractiveState['SaltFile'] = $null; $script:UlsInteractiveState['SaltFromEnv'] = $null; Write-Warn 'Salt was stored only in this PowerShell session as $global:UlsInteractiveSalt and will be hidden in set/plan output.' }
+        '^(safebundleout|bundle)$' { $script:UlsInteractiveState['SafeBundleOut'] = $value; Write-Ok "SafeBundleOut set." }
+        '^(scrubpolicy|policy)$' { $script:UlsInteractiveState['ScrubPolicy'] = $value; Write-Ok "ScrubPolicy set." }
+        '^(throttlelimit|throttle)$' { $script:UlsInteractiveState['ThrottleLimit'] = [int]$value; Write-Ok "ThrottleLimit set." }
+        '^(largefilethresholdmb|large)$' { $script:UlsInteractiveState['LargeFileThresholdMB'] = [int]$value; Write-Ok "LargeFileThresholdMB set." }
+        '^recurse$' { $script:UlsInteractiveState['Recurse'] = (Get-UlsInteractiveBoolFromText -Value $value); Write-Ok "Recurse set." }
+        '^extractcab$' { $script:UlsInteractiveState['ExtractCab'] = (Get-UlsInteractiveBoolFromText -Value $value); Write-Ok "ExtractCab set." }
+        '^convertetl$' { $script:UlsInteractiveState['ConvertEtl'] = (Get-UlsInteractiveBoolFromText -Value $value); Write-Ok "ConvertEtl set." }
+        '^dryrun$' { $script:UlsInteractiveState['DryRun'] = (Get-UlsInteractiveBoolFromText -Value $value); Write-Ok "DryRun set." }
+        '^explaindetections$' { $script:UlsInteractiveState['ExplainDetections'] = (Get-UlsInteractiveBoolFromText -Value $value); Write-Ok "ExplainDetections set." }
+        default { Write-Warn "Unknown session setting: $key" }
+    }
+}
+
+function Get-UlsInteractiveManifestPathFromParameters {
+    param([hashtable]$Parameters)
+    if ($Parameters -and $Parameters.ContainsKey('WorkDir') -and -not [string]::IsNullOrWhiteSpace([string]$Parameters['WorkDir'])) {
+        return (Join-Path ([string]$Parameters['WorkDir']) 'scrub_run_manifest.json')
+    }
+    return $null
+}
+
+function Set-UlsInteractiveLastRun {
+    param([hashtable]$Parameters, $Result)
+    $manifestPath = Get-UlsInteractiveManifestPathFromParameters -Parameters $Parameters
+    $script:UlsInteractiveLastRun = [pscustomobject]@{
+        When = Get-Date
+        Parameters = $Parameters.Clone()
+        Result = $Result
+        ManifestPath = $manifestPath
+        WorkDir = if ($Parameters.ContainsKey('WorkDir')) { [string]$Parameters['WorkDir'] } else { $null }
+        SafeBundleOut = if ($Parameters.ContainsKey('SafeBundleOut')) { [string]$Parameters['SafeBundleOut'] } else { $null }
+    }
+}
+
+function Get-UlsInteractiveLastManifest {
+    if ($null -eq $script:UlsInteractiveLastRun) { return $null }
+    $path = [string]$script:UlsInteractiveLastRun.ManifestPath
+    if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+    try { return (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json) } catch { return $null }
+}
+
+function Show-UlsInteractiveLastRun {
+    param([Alias('Args')][string[]]$CommandArgs)
+    if ($null -eq $script:UlsInteractiveLastRun) { Write-Warn 'No interactive scrub run has completed in this session yet.'; return }
+    $topic = 'summary'
+    if ($CommandArgs -and $CommandArgs.Count -gt 0) { $topic = ([string]$CommandArgs[0]).Trim().ToLowerInvariant() }
+    $manifest = Get-UlsInteractiveLastManifest
+
+    switch -Regex ($topic) {
+        '^(summary|)$' {
+            Write-Host ""
+            Write-Rule "Last run"
+            Write-Host ("When      : {0}" -f $script:UlsInteractiveLastRun.When) -ForegroundColor Gray
+            Write-Host ("WorkDir   : {0}" -f (Get-UlsInteractiveDisplayValue $script:UlsInteractiveLastRun.WorkDir)) -ForegroundColor Gray
+            Write-Host ("Manifest  : {0}" -f (Get-UlsInteractiveDisplayValue $script:UlsInteractiveLastRun.ManifestPath)) -ForegroundColor Gray
+            if ($manifest -and $manifest.summary) {
+                Write-Host ("Scrubbed  : {0}" -f $manifest.summary.scrubbedFiles) -ForegroundColor Gray
+                Write-Host ("Skipped   : {0}" -f $manifest.summary.skippedFiles) -ForegroundColor Gray
+                Write-Host ("Failed    : {0}" -f $manifest.summary.failedFiles) -ForegroundColor Gray
+                Write-Host ("Rows      : {0}" -f $manifest.summary.rows) -ForegroundColor Gray
+                Write-Host ("Replace   : {0}" -f $manifest.summary.replacements) -ForegroundColor Gray
+                Write-Host ("Output MB : {0:N2}" -f ([double]$manifest.summary.outputBytes / 1MB)) -ForegroundColor Gray
+            }
+            else { Write-Warn 'Manifest was not found or could not be read.' }
+        }
+        '^command$' { Show-UlsInteractiveCommandPreview -Parameters $script:UlsInteractiveLastRun.Parameters }
+        '^manifest$' {
+            Write-Host ""
+            Write-Rule "Last manifest"
+            Write-Host (Get-UlsInteractiveDisplayValue $script:UlsInteractiveLastRun.ManifestPath) -ForegroundColor Gray
+        }
+        '^skipped$' {
+            if (-not $manifest) { Write-Warn 'Manifest was not found or could not be read.'; return }
+            $items = @($manifest.skippedFiles)
+            Write-Host ""
+            Write-Rule ("Skipped files: {0}" -f $items.Count)
+            foreach ($item in @($items | Select-Object -First 20)) { Write-Host ("  {0} -- {1}" -f $item.relativePath, $item.reason) -ForegroundColor Gray }
+            if ($items.Count -gt 20) { Write-Warn ("{0} additional skipped file(s) omitted." -f ($items.Count - 20)) }
+        }
+        '^failed$' {
+            if (-not $manifest) { Write-Warn 'Manifest was not found or could not be read.'; return }
+            $items = @($manifest.failedFiles)
+            Write-Host ""
+            Write-Rule ("Failed files: {0}" -f $items.Count)
+            foreach ($item in @($items | Select-Object -First 20)) { Write-Host ("  {0} -- {1}" -f $item.relativePath, $item.error) -ForegroundColor Gray }
+            if ($items.Count -gt 20) { Write-Warn ("{0} additional failed file(s) omitted." -f ($items.Count - 20)) }
+        }
+        '^open$' {
+            $target = $script:UlsInteractiveLastRun.WorkDir
+            if ([string]::IsNullOrWhiteSpace($target)) { $target = $script:UlsInteractiveLastRun.ManifestPath }
+            if (-not [string]::IsNullOrWhiteSpace($target) -and (Test-Path -LiteralPath $target)) { Invoke-Item -LiteralPath $target }
+            else { Write-Warn 'Last run path is not available.' }
+        }
+        default { Write-Warn "Unknown last topic: $topic"; Show-UlsInteractiveHelp -Command 'last' }
+    }
+}
+
+function Invoke-UlsInteractiveValidateCommand {
+    param([Alias('Args')][string[]]$CommandArgs)
+    Initialize-UlsInteractiveState
+    $argsList = @($CommandArgs)
+    if ($argsList.Count -gt 0 -and ([string]$argsList[0]).ToLowerInvariant() -in @('profile','profiles')) {
+        if ($argsList.Count -gt 1) { $argsList = @($argsList[1..($argsList.Count - 1)]) } else { $argsList = @() }
+    }
+
+    $parsed = ConvertFrom-UlsInteractiveArgs -CommandArgs $argsList
+    if (Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('help','h')) { Show-UlsInteractiveHelp -Command 'validate'; return }
+    $detailed = Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('detailed','full')
+    $quiet = Test-UlsInteractiveSwitch -Switches $parsed.Switches -Names @('quiet','q')
+
+    $profileFile = Get-UlsInteractiveValue -Values $parsed.Values -Names @('profilefile','file') -Default $null
+    $profileName = Get-UlsInteractiveValue -Values $parsed.Values -Names @('profile','name') -Default $null
+    $target = $null
+    if ($parsed.Positionals -and @($parsed.Positionals).Count -gt 0) { $target = (@($parsed.Positionals) -join ' ') }
+
+    if ([string]::IsNullOrWhiteSpace($profileFile) -and [string]::IsNullOrWhiteSpace($profileName) -and [string]::IsNullOrWhiteSpace($target)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$script:UlsInteractiveState['ProfileFile'])) { $profileFile = [string]$script:UlsInteractiveState['ProfileFile'] }
+        elseif (-not [string]::IsNullOrWhiteSpace([string]$script:UlsInteractiveState['Profile'])) { $profileName = [string]$script:UlsInteractiveState['Profile'] }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($profileFile)) {
+        return Test-UniversalScrubberProfile -ProfileFile $profileFile -Detailed:$detailed -Quiet:$quiet
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($profileName)) {
+        return Test-UniversalScrubberProfile -Profile $profileName -Detailed:$detailed -Quiet:$quiet
+    }
+
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        Write-Warn 'No profile was supplied and no session profile is set.'
+        Write-Detail 'Use: validate profile Generic'
+        Write-Detail 'Use: validate profile .\docs\profiles\kv-log-profile.json'
+        return
+    }
+
+    $looksLikePath = $false
+    try {
+        if ([System.IO.Path]::IsPathRooted($target) -or $target -match '[\\/]' -or $target -match '(?i)\.(json|psd1)$') { $looksLikePath = $true }
+    } catch { }
+
+    if ($looksLikePath -or (Test-Path -LiteralPath $target -PathType Leaf -ErrorAction SilentlyContinue)) {
+        return Test-UniversalScrubberProfile -ProfileFile $target -Detailed:$detailed -Quiet:$quiet
+    }
+
+    return Test-UniversalScrubberProfile -Profile $target -Detailed:$detailed -Quiet:$quiet
+}
+
+function Invoke-UlsInteractiveDoctor {
+    Initialize-UlsInteractiveState
+    Write-Host ""
+    Write-Rule "Environment doctor"
+    Write-Host ("Module version : {0}" -f $script:ModuleVersion) -ForegroundColor Gray
+    Write-Host ("PowerShell     : {0} ({1})" -f $PSVersionTable.PSVersion, $PSVersionTable.PSEdition) -ForegroundColor Gray
+    Write-Host ("Host           : {0}" -f $Host.Name) -ForegroundColor Gray
+    Write-Host ("OS             : {0}" -f [System.Environment]::OSVersion.VersionString) -ForegroundColor Gray
+    if (Test-UlsEnhancedInteractiveConsole) { Write-Ok "Enhanced PS7 console mode is available." }
+    else { Write-Info "Classic interactive console mode will be used on this host." }
+    if (Test-UlsAnsiConsole) { Write-Ok "ANSI/PSStyle output appears available." }
+    else { Write-Info "ANSI/PSStyle output is not required; classic colors will be used." }
+
+    try {
+        [void](Initialize-UlsCSharpProcessingEngine)
+        if ($script:CSharpAvailable) { Write-Ok ("CSharp processing engine: available ({0})" -f $script:CSharpEngineVersion) }
+        else { Write-Warn ("CSharp processing engine unavailable: {0}" -f $script:CSharpFallbackReason) }
+    }
+    catch { Write-Warn ("CSharp processing engine check failed: {0}" -f $_.Exception.Message) }
+
+    try {
+        $cwd = (Get-Location).Path
+        $testFile = Join-Path $cwd (".uls_write_test_{0}.tmp" -f ([guid]::NewGuid().ToString('N')))
+        Set-Content -LiteralPath $testFile -Value 'test' -Encoding ASCII -ErrorAction Stop
+        Remove-Item -LiteralPath $testFile -Force -ErrorAction SilentlyContinue
+        Write-Ok ("Current folder is writable: {0}" -f $cwd)
+    }
+    catch { Write-Warn ("Current folder write test failed: {0}" -f $_.Exception.Message) }
+
+    if (Test-UlsWindowsHost) {
+        if (Get-Command expand.exe -ErrorAction SilentlyContinue) { Write-Ok "CAB extraction helper found: expand.exe" }
+        else { Write-Warn "CAB extraction helper not found: expand.exe" }
+        Write-Info "Windows event conversion workflows are available on Windows hosts. ETL conversion remains opt-in with -ConvertEtl."
+        try { Write-Info ("ExecutionPolicy CurrentUser: {0}" -f (Get-ExecutionPolicy -Scope CurrentUser)) } catch { }
+    }
+    else {
+        Write-Info "Non-Windows host: core text/CSV/JSON scrubbing works when PowerShell is installed; Windows event conversion is Windows-oriented."
+    }
+
+    try {
+        $samplePath = Join-Path (Get-Location).Path 'samples\logs'
+        if (Test-Path -LiteralPath $samplePath -PathType Container) { Write-Ok "Sample logs folder found." }
+        else { Write-Info "Sample logs folder was not found under the current directory." }
+    } catch { }
+
+    Write-Warn "Interactive console only dispatches known ULS commands; arbitrary PowerShell input is not executed."
+}
+
+function Show-UlsInteractiveExamples {
+    Write-Host ""
+    Write-Rule "Examples"
+    Write-Host "Set session defaults:" -ForegroundColor White
+    Write-Host "  set path .\logs" -ForegroundColor Gray
+    Write-Host "  set workdir .\out" -ForegroundColor Gray
+    Write-Host "  set profile Generic" -ForegroundColor Gray
+    Write-Host "  set saltfile .\salt.txt" -ForegroundColor Gray
+    Write-Host "  plan" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Generic folder scrub:" -ForegroundColor White
+    Write-Host "  scrub -Path .\logs -WorkDir .\out -Profile Generic -SaltFile .\salt.txt -Recurse" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Intune diagnostic bundle:" -ForegroundColor White
+    Write-Host "  scrub -Path C:\DiagLogs -WorkDir C:\Scrubbed -Profile IntuneDiagnostics -SaltFile .\salt.txt -ExtractCab -Recurse -SafeBundleOut C:\Scrubbed\safe-upload.zip" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Recommendation only:" -ForegroundColor White
+    Write-Host "  recommend -Path .\logs -Recurse" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Inspect a BYOP profile file:" -ForegroundColor White
+    Write-Host "  profile .\docs\profiles\kv-log-profile.json" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Dry-run detection review:" -ForegroundColor White
+    Write-Host "  scrub -Path .\logs -WorkDir .\out -Profile Generic -SaltFile .\salt.txt -Recurse -DryRun -ExplainDetections" -ForegroundColor Gray
+}
+
+
+function Test-UlsInteractiveRawInputConsole {
+    try {
+        # Raw key input is available in normal ConsoleHost sessions in both
+        # Windows PowerShell 5.1 and PowerShell 7. Do not gate this on
+        # Test-UlsEnhancedInteractiveConsole, which intentionally only covers
+        # the prettier PS7 display path.
+        if ($Host.Name -match '(?i)ISE') { return $false }
+        if ([System.Console]::IsInputRedirected -or [System.Console]::IsOutputRedirected) { return $false }
+        [void][System.Console]::CursorLeft
+        [void][System.Console]::CursorTop
+        return $true
+    }
+    catch { return $false }
+}
+
+function Get-UlsInteractiveCommandNames {
+    $commands = @((Get-UlsInteractiveCommandCatalog).Name)
+    $aliases = @('?','q','quit','cls','p','rec','ver','vprof','profiles','verify','test','shortcuts','aliases')
+    return @($commands + $aliases | Sort-Object -Unique)
+}
+
+function Get-UlsInteractiveProfileNames {
+    $names = @('Auto')
+    try { $names += @((Get-ScrubProfile) | ForEach-Object { [string]$_.Name }) } catch { }
+    return @($names | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+}
+
+function Get-UlsInteractiveSetKeys {
+    return @('path','workdir','profile','profilefile','mapsource','tokenmapmode','tokenmapcsv','salt','saltfile','saltfromenv','recurse','extractcab','convertetl','dryrun','explaindetections','safebundleout','scrubpolicy','throttlelimit','largefilethresholdmb','reset')
+}
+
+function Get-UlsInteractiveOptionNames {
+    param([string]$Command)
+    switch -Regex (($Command | ForEach-Object { [string]$_ }).ToLowerInvariant()) {
+        '^(scrub|plan)$' {
+            return @('-Path','-WorkDir','-Profile','-ProfileFile','-MapSource','-TokenMapMode','-TokenMapCsv','-Salt','-SaltFile','-SaltFromEnv','-Recurse','-ExtractCab','-ConvertEtl','-DryRun','-ExplainDetections','-SafeBundleOut','-ScrubPolicy','-ThrottleLimit','-LargeFileThresholdMB')
+        }
+        '^(recommend|rec)$' { return @('-Path','-Recurse') }
+        '^(validate|verify|test|vprof)$' { return @('-Detailed','-Quiet') }
+        default { return @() }
+    }
+}
+
+function Split-UlsInteractiveWordsForCompletion {
+    param([string]$Text)
+    $items = New-Object System.Collections.Generic.List[string]
+    if ([string]::IsNullOrEmpty($Text)) { return @() }
+    $sb = New-Object System.Text.StringBuilder
+    $quote = [char]0
+    for ($i = 0; $i -lt $Text.Length; $i++) {
+        $ch = $Text[$i]
+        if ($quote -ne [char]0) {
+            if ($ch -eq $quote) { $quote = [char]0; continue }
+            [void]$sb.Append($ch)
+            continue
+        }
+        if ($ch -eq '"' -or $ch -eq "'") { $quote = $ch; continue }
+        if ([char]::IsWhiteSpace($ch)) {
+            if ($sb.Length -gt 0) { $items.Add($sb.ToString()); [void]$sb.Clear() }
+            continue
+        }
+        [void]$sb.Append($ch)
+    }
+    if ($sb.Length -gt 0) { $items.Add($sb.ToString()) }
+    return @($items.ToArray())
+}
+
+function Get-UlsInteractiveCompletionContext {
+    param([string]$Line, [int]$Cursor)
+    if ($null -eq $Line) { $Line = '' }
+    if ($Cursor -lt 0) { $Cursor = 0 }
+    if ($Cursor -gt $Line.Length) { $Cursor = $Line.Length }
+    $before = $Line.Substring(0, $Cursor)
+    $quote = [char]0
+    $start = 0
+    for ($i = 0; $i -lt $before.Length; $i++) {
+        $ch = $before[$i]
+        if ($quote -ne [char]0) {
+            if ($ch -eq $quote) { $quote = [char]0 }
+            continue
+        }
+        if ($ch -eq '"' -or $ch -eq "'") { $quote = $ch; continue }
+        if ([char]::IsWhiteSpace($ch)) { $start = $i + 1 }
+    }
+    $prefix = $before.Substring($start)
+    $prior = if ($start -gt 0) { $before.Substring(0, $start) } else { '' }
+    $wordsBefore = @(Split-UlsInteractiveWordsForCompletion -Text $prior)
+    return [pscustomobject]@{
+        Prefix = $prefix
+        MatchPrefix = $prefix.Trim('"', "'")
+        Start = $start
+        Length = $Cursor - $start
+        WordsBefore = $wordsBefore
+    }
+}
+
+function ConvertTo-UlsInteractiveCompletionReplacement {
+    param([string]$Value, [string]$OriginalPrefix)
+    if ($null -eq $Value) { return $null }
+    $v = [string]$Value
+    $wasQuoted = $false
+    if (-not [string]::IsNullOrEmpty($OriginalPrefix)) {
+        $wasQuoted = ($OriginalPrefix[0] -eq '"' -or $OriginalPrefix[0] -eq "'")
+    }
+    if ($wasQuoted -or $v -match '\s') {
+        return ('"{0}"' -f ($v -replace '"','`"'))
+    }
+    return $v
+}
+
+function Get-UlsInteractivePathCompletions {
+    param([string]$Prefix, [switch]$DirectoryOnly)
+    $raw = ([string]$Prefix).Trim('"', "'")
+
+    $parentText = ''
+    $leaf = ''
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+        $parentText = '.'
+        $leaf = ''
+    }
+    else {
+        if ($raw.EndsWith('\') -or $raw.EndsWith('/')) {
+            $parentText = $raw.TrimEnd('\','/')
+            $leaf = ''
+        }
+        else {
+            $parentText = Split-Path -Path $raw -Parent
+            $leaf = Split-Path -Path $raw -Leaf
+        }
+        if ([string]::IsNullOrWhiteSpace($parentText)) { $parentText = '.' }
+    }
+
+    try { $items = @(Get-ChildItem -LiteralPath $parentText -Force -ErrorAction Stop) }
+    catch { return @() }
+
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($item in $items) {
+        if ($DirectoryOnly -and -not $item.PSIsContainer) { continue }
+        if (-not [string]::IsNullOrEmpty($leaf) -and $item.Name -notlike "$leaf*") { continue }
+        $base = if ($parentText -eq '.') {
+            if ($raw.StartsWith('.\') -or $raw.StartsWith('./')) { Join-Path '.' $item.Name } else { $item.Name }
+        }
+        else { Join-Path $parentText $item.Name }
+        if ($item.PSIsContainer -and -not ($base.EndsWith('\') -or $base.EndsWith('/'))) { $base = $base + [System.IO.Path]::DirectorySeparatorChar }
+        $out.Add((ConvertTo-UlsInteractiveCompletionReplacement -Value $base -OriginalPrefix $Prefix))
+        if ($out.Count -ge 80) { break }
+    }
+    return @($out.ToArray())
+}
+
+function Get-UlsInteractiveCompletionCandidates {
+    param([string]$Line, [int]$Cursor)
+    $ctx = Get-UlsInteractiveCompletionContext -Line $Line -Cursor $Cursor
+    $prefix = [string]$ctx.MatchPrefix
+    $words = @($ctx.WordsBefore)
+
+    if ($words.Count -eq 0) {
+        return @((Get-UlsInteractiveCommandNames) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique)
+    }
+
+    $command = ([string]$words[0]).ToLowerInvariant()
+    $argsBefore = @()
+    if ($words.Count -gt 1) { $argsBefore = @($words[1..($words.Count - 1)]) }
+    $previous = if ($argsBefore.Count -gt 0) { [string]$argsBefore[-1] } else { '' }
+
+    $pathOptions = @('-path','-workdir','-profilefile','-saltfile','-safebundleout','-tokenmapcsv')
+    $profileOptions = @('-profile')
+    $boolValues = @('true','false')
+
+    if ($prefix -match '^[A-Za-z]:[\\/]|^\.|[\\/]') {
+        return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix)
+    }
+
+    if ($prefix.StartsWith('-')) {
+        return @((Get-UlsInteractiveOptionNames -Command $command) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique)
+    }
+
+    if ($pathOptions -contains $previous.ToLowerInvariant()) {
+        $dirOnly = $previous -in @('-path','-workdir')
+        return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix -DirectoryOnly:$dirOnly)
+    }
+    if ($profileOptions -contains $previous.ToLowerInvariant()) {
+        return @((Get-UlsInteractiveProfileNames) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique)
+    }
+
+    switch -Regex ($command) {
+        '^(help|\?)$' { return @((Get-UlsInteractiveCommandNames) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique) }
+        '^(profile|profiles|p)$' {
+            $choices = @('show') + (Get-UlsInteractiveProfileNames)
+            return @($choices | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique)
+        }
+        '^(validate|verify|test|vprof)$' {
+            if ($argsBefore.Count -eq 0) { return @('profile' | Where-Object { $_ -like "$prefix*" }) }
+            if ($argsBefore.Count -ge 1 -and ([string]$argsBefore[0]).ToLowerInvariant() -eq 'profile') {
+                $choices = @(Get-UlsInteractiveProfileNames)
+                $paths = @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix)
+                return @($choices + $paths | Where-Object { $_ -like "*$prefix*" } | Sort-Object -Unique)
+            }
+        }
+        '^set$' {
+            if ($argsBefore.Count -eq 0) { return @((Get-UlsInteractiveSetKeys) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique) }
+            $key = ([string]$argsBefore[0]).ToLowerInvariant()
+            switch ($key) {
+                'profile' { return @((Get-UlsInteractiveProfileNames) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique) }
+                'profilefile' { return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix) }
+                'path' { return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix -DirectoryOnly) }
+                'workdir' { return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix -DirectoryOnly) }
+                'saltfile' { return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix) }
+                'safebundleout' { return @(Get-UlsInteractivePathCompletions -Prefix $ctx.Prefix) }
+                { $_ -in @('recurse','extractcab','convertetl','dryrun','explaindetections') } { return @($boolValues | Where-Object { $_ -like "$prefix*" }) }
+                'mapsource' { return @('Discover','ExistingMap','Manual','AD' | Where-Object { $_ -like "$prefix*" }) }
+                'tokenmapmode' { return @('Replace','Merge' | Where-Object { $_ -like "$prefix*" }) }
+                'scrubpolicy' { return @('Balanced','Strict' | Where-Object { $_ -like "$prefix*" }) }
+            }
+        }
+        '^(scrub|plan|recommend|rec)$' {
+            if ([string]::IsNullOrEmpty($prefix)) { return @() }
+            return @((Get-UlsInteractiveOptionNames -Command $command) | Where-Object { $_ -like "$prefix*" } | Sort-Object -Unique)
+        }
+        '^last$' { return @('summary','manifest','skipped','failed','command','open' | Where-Object { $_ -like "$prefix*" }) }
+        '^(version|ver)$' { return @('full' | Where-Object { $_ -like "$prefix*" }) }
+    }
+    return @()
+}
+
+function Redraw-UlsInteractiveInputLine {
+    param(
+        [string]$Buffer,
+        [int]$Cursor,
+        [int]$StartLeft,
+        [int]$StartTop,
+        [ref]$LastLength
+    )
+    try {
+        [System.Console]::SetCursorPosition($StartLeft, $StartTop)
+        $clear = [Math]::Max([int]$LastLength.Value, $Buffer.Length)
+        if ($clear -gt 0) { [System.Console]::Write((' ' * $clear)) }
+        [System.Console]::SetCursorPosition($StartLeft, $StartTop)
+        [System.Console]::Write($Buffer)
+        $LastLength.Value = $Buffer.Length
+        [System.Console]::SetCursorPosition(($StartLeft + $Cursor), $StartTop)
+    }
+    catch { }
+}
+
+
+function Read-UlsInteractiveCommand {
+    if (-not (Test-UlsInteractiveRawInputConsole)) {
+        return Read-Host '(ULS) >'
+    }
+
+    try {
+        Write-Host "(" -ForegroundColor White -NoNewline
+        Write-Host "ULS" -ForegroundColor Magenta -NoNewline
+        Write-Host ") " -ForegroundColor White -NoNewline
+        Write-Host "> " -ForegroundColor DarkCyan -NoNewline
+        $startLeft = [System.Console]::CursorLeft
+        $startTop = [System.Console]::CursorTop
+        $buffer = ''
+        $cursor = 0
+        $lastLength = 0
+        $completion = @{ Active=$false; Candidates=@(); Index=0; Start=0; Length=0 }
+        $oldTreat = [System.Console]::TreatControlCAsInput
+        [System.Console]::TreatControlCAsInput = $true
+        try {
+            while ($true) {
+                $key = [System.Console]::ReadKey($true)
+                if (($key.Modifiers -band [ConsoleModifiers]::Control) -and $key.Key -eq [ConsoleKey]::C) {
+                    Write-Host ''
+                    return 'exit'
+                }
+                switch ($key.Key) {
+                    ([ConsoleKey]::Enter) {
+                        Write-Host ''
+                        return $buffer
+                    }
+                    ([ConsoleKey]::Backspace) {
+                        if ($cursor -gt 0) {
+                            $buffer = $buffer.Remove($cursor - 1, 1)
+                            $cursor--
+                            $completion.Active = $false
+                        }
+                    }
+                    ([ConsoleKey]::Delete) {
+                        if ($cursor -lt $buffer.Length) {
+                            $buffer = $buffer.Remove($cursor, 1)
+                            $completion.Active = $false
+                        }
+                    }
+                    ([ConsoleKey]::LeftArrow) { if ($cursor -gt 0) { $cursor-- } }
+                    ([ConsoleKey]::RightArrow) { if ($cursor -lt $buffer.Length) { $cursor++ } }
+                    ([ConsoleKey]::Home) { $cursor = 0 }
+                    ([ConsoleKey]::End) { $cursor = $buffer.Length }
+                    ([ConsoleKey]::Escape) { $buffer = ''; $cursor = 0; $completion.Active = $false }
+                    ([ConsoleKey]::Tab) {
+                        $ctx = Get-UlsInteractiveCompletionContext -Line $buffer -Cursor $cursor
+                        $candidates = @()
+                        if ($completion.Active -and $completion.Candidates.Count -gt 0 -and $completion.Start -eq $ctx.Start) {
+                            $candidates = @($completion.Candidates)
+                            $completion.Index = ($completion.Index + 1) % $candidates.Count
+                        }
+                        else {
+                            $candidates = @(Get-UlsInteractiveCompletionCandidates -Line $buffer -Cursor $cursor)
+                            if ($candidates.Count -gt 0) {
+                                $completion.Active = $true
+                                $completion.Candidates = $candidates
+                                $completion.Index = 0
+                                $completion.Start = $ctx.Start
+                            }
+                        }
+                        if ($candidates.Count -gt 0) {
+                            $replacement = [string]$candidates[$completion.Index]
+                            $ctx = Get-UlsInteractiveCompletionContext -Line $buffer -Cursor $cursor
+                            $before = if ($ctx.Start -gt 0) { $buffer.Substring(0, $ctx.Start) } else { '' }
+                            $afterStart = $cursor
+                            $after = if ($afterStart -lt $buffer.Length) { $buffer.Substring($afterStart) } else { '' }
+                            $buffer = $before + $replacement + $after
+                            $cursor = $before.Length + $replacement.Length
+                        }
+                    }
+                    default {
+                        $ch = $key.KeyChar
+                        if (-not [char]::IsControl($ch)) {
+                            if ($cursor -ge $buffer.Length) { $buffer += [string]$ch }
+                            else { $buffer = $buffer.Insert($cursor, [string]$ch) }
+                            $cursor++
+                            $completion.Active = $false
+                        }
+                    }
+                }
+                Redraw-UlsInteractiveInputLine -Buffer $buffer -Cursor $cursor -StartLeft $startLeft -StartTop $startTop -LastLength ([ref]$lastLength)
+            }
+        }
+        finally { [System.Console]::TreatControlCAsInput = $oldTreat }
+    }
+    catch {
+        try { Write-Host '' } catch { }
+        return Read-Host '(ULS) >'
+    }
+}
+
+function Show-UlsInteractiveStartup {
+    Write-Banner
+    Write-Detail "Type 'help' for commands, 'set' to show session defaults, 'set path <folder>' to remember defaults, 'plan' to preview, or 'exit' to leave."
+    Write-Host ""
+}
+
+function Start-UniversalScrubberInteractive {
+    [CmdletBinding()]
+    param()
+
+    Initialize-UlsInteractiveState
+    Show-UlsInteractiveStartup
+
+    while ($true) {
+        try {
+            $line = Read-UlsInteractiveCommand
+            if ($null -eq $line) { Write-Host ""; break }
+            $line = ([string]$line).Trim()
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
+            $parts = @(Split-UlsInteractiveCommandLine -Line $line)
+            if ($parts.Count -eq 0) { continue }
+            $command = ([string]$parts[0]).ToLowerInvariant()
+            $commandArgs = @()
+            if ($parts.Count -gt 1) { $commandArgs = @($parts[1..($parts.Count - 1)]) }
+
+            switch -Regex ($command) {
+                '^(exit|quit|q)$' {
+                    if (Read-YesNo -Prompt 'Exit Universal Log Scrubber interactive console' -Default $true) { Write-Host 'Goodbye.' -ForegroundColor Gray; return }
+                }
+                '^(help|\?)$' {
+                    $topic = if ($commandArgs.Count -gt 0) { [string]$commandArgs[0] } else { $null }
+                    Show-UlsInteractiveHelp -Command $topic
+                }
+                '^scrub$' { Invoke-UlsInteractiveScrubCommand -CommandArgs $commandArgs }
+                '^(recommend|rec)$' { Invoke-UlsInteractiveRecommendCommand -CommandArgs $commandArgs }
+                '^(profile|profiles|p)$' { Show-UlsInteractiveProfiles -CommandArgs $commandArgs }
+                '^(validate|verify|test|vprof)$' { Invoke-UlsInteractiveValidateCommand -CommandArgs $commandArgs }
+                '^set$' { Set-UlsInteractiveSessionValue -CommandArgs $commandArgs }
+                '^show$' {
+                    if ($commandArgs.Count -gt 0 -and ([string]$commandArgs[0]).ToLowerInvariant() -in @('command','cmd','plan')) { Show-UlsInteractivePlan }
+                    else { Show-UlsInteractiveSession }
+                }
+                '^plan$' { Show-UlsInteractivePlan -CommandArgs $commandArgs }
+                '^last$' { Show-UlsInteractiveLastRun -CommandArgs $commandArgs }
+                '^(version|ver)$' {
+                    $versionFull = $false
+                    if ($commandArgs.Count -gt 0) {
+                        foreach ($versionArg in $commandArgs) {
+                            if ($versionArg -ieq 'full' -or $versionArg -ieq '-full' -or $versionArg -ieq '--full') { $versionFull = $true }
+                        }
+                    }
+                    Show-UlsInteractiveVersion -Full:$versionFull
+                }
+                '^doctor$' { Invoke-UlsInteractiveDoctor }
+                '^examples$' { Show-UlsInteractiveExamples }
+                '^(shortcuts|aliases)$' { Show-UlsInteractiveHelp -Command 'shortcuts' }
+                '^(clear|cls)$' { Clear-Host; Show-UlsInteractiveStartup }
+                default {
+                    Write-Warn "Unknown command: $command"
+                    $known = @((Get-UlsInteractiveCommandCatalog).Name | Where-Object { $_ -like "$command*" })
+                    if ($known.Count -gt 0) { Write-Info ("Did you mean: {0}" -f ($known -join ', ')) }
+                    else { Write-Info "Type 'help' to see available commands." }
+                }
+            }
+        }
+        catch [System.Management.Automation.PipelineStoppedException] { throw }
+        catch [System.Management.Automation.RuntimeException] {
+            Write-Fail $_.Exception.Message
+            Write-Detail "Use 'help' or rerun the command with simpler options."
+        }
+        catch {
+            Write-Fail $_.Exception.Message
+        }
+        Write-Host ""
+    }
+}
+
+# END interactive console v1.1
+
+
+
+# =====================================================================
 # REGION: Interactive driver
 # =====================================================================
 function Invoke-UniversalScrubber {
         [CmdletBinding()]
     param(
         [switch]$Version,
+        [switch]$Help,
+        [switch]$Interactive,
         [string]$Path,
         [string]$WorkDir,
         [switch]$RecommendOnly,
@@ -10758,6 +12772,8 @@ function Invoke-UniversalScrubber {
     )
 
     if ($Version) { return Get-UniversalLogScrubberVersionInfo }
+    if ($Help) { return Show-UlsTopLevelHelp }
+    if ($Interactive -or $PSBoundParameters.Count -eq 0) { return Start-UniversalScrubberInteractive }
 
     if ($LargeFileThresholdMB -lt 1) { $LargeFileThresholdMB = 100 }
     if ($ThrottleLimit -lt 1) { $ThrottleLimit = 1 }
@@ -10892,6 +12908,10 @@ function Invoke-UniversalScrubber {
             [void]$skippedFiles.Add((New-UlsSkippedFileRecord -File $t -Reason 'Empty file' -ActionRequired 'No action required.'))
             continue
         }
+        if ($ext -eq '.etl' -and -not $ConvertEtl) {
+            [void]$skippedFiles.Add((New-UlsSkippedFileRecord -File $t -Reason 'ETL conversion not requested' -ActionRequired 'Re-run with -ConvertEtl on a Windows host, or convert the ETL to event XML text locally and scrub the converted output.'))
+            continue
+        }
         if ($ext -eq '.cab') {
             if (-not $ExtractCab) {
                 [void]$skippedFiles.Add((New-UlsSkippedFileRecord -File $t -Reason 'CAB archive was not extracted' -ActionRequired 'Re-run with -ExtractCab to extract and scrub supported contents.'))
@@ -10935,6 +12955,11 @@ function Invoke-UniversalScrubber {
     if ($targets.Count -eq 0) {
         if ($skippedFiles.Count -gt 0) {
             foreach ($s in @($skippedFiles.ToArray())) { Write-Detail ("Skipped {0}: {1}" -f $s.name, $s.reason) }
+            $etlSkipCount = @($skippedFiles.ToArray() | Where-Object { [string]$_.reason -eq 'ETL conversion not requested' }).Count
+            if ($etlSkipCount -gt 0) {
+                Write-Warn "No files were scrubbed because ETL conversion was not requested. Re-run with -ConvertEtl on a Windows host, or scrub pre-converted .events.txt output."
+                return [pscustomobject]@{ Clean = $true; ScrubbedFiles = 0; SkippedFiles = @($skippedFiles.ToArray()); Reason = 'ETL conversion not requested' }
+            }
         }
         throw "No supported non-empty files found to scrub: $Path"
     }
@@ -10952,6 +12977,11 @@ function Invoke-UniversalScrubber {
     else {
         Write-Ok "Target: $($targets[0].Name)"
         if ($skippedFiles.Count -gt 0) { Write-Info "Skipped $($skippedFiles.Count) unsupported/empty file(s)." }
+    }
+
+    if ($Profile -and $Profile -ieq 'Auto' -and -not $ProfileFile) {
+        $Profile = $null
+        Write-Info "Profile Auto/default requested; no profile will be forced. Format-aware defaults will be used."
     }
 
     if ($AutoProfile -and -not $Profile -and -not $ProfileFile) {
@@ -11010,7 +13040,9 @@ function Invoke-UniversalScrubber {
                 }
                 elseif ($ext2 -eq '.etl') {
                     if (-not $ConvertEtl) {
-                        throw "ETL file '$($t.Name)' requires -ConvertEtl to run local EventLogReader conversion, or convert the ETL to XML/text yourself and scrub the converted output."
+                        [void]$skippedFiles.Add((New-UlsSkippedFileRecord -File $t -Reason 'ETL conversion not requested' -ActionRequired 'Re-run with -ConvertEtl on a Windows host, or convert the ETL to event XML text locally and scrub the converted output.'))
+                        Write-Warn "Skipping ETL file '$($t.Name)' because -ConvertEtl was not supplied."
+                        continue
                     }
                     $ctx = Get-UlsOutputContext -InputPath $t.FullName -WorkDir $WorkDir -InputRoot $inputRoot -CabExtractionRoots @($cabExtractionRoots.ToArray())
                     $key = (Get-SafeDerivedPath -InputPath $t.FullName -OutDir $ctx.OutDir -BasePath $ctx.BasePath -Suffix '.etl.events.txt').ToLowerInvariant()
@@ -11056,12 +13088,24 @@ function Invoke-UniversalScrubber {
             }
             catch {
                 Write-Fail "Conversion failed for $($t.Name): $($_.Exception.Message)"
-                if ($ext2 -in @('.doc','.ppt','.etl')) { throw }
+                if ($ext2 -in @('.doc','.ppt')) { throw }
+                if ($ext2 -eq '.etl') {
+                    [void]$skippedFiles.Add((New-UlsSkippedFileRecord -File $t -Reason ("ETL conversion failed: {0}" -f $_.Exception.Message) -ActionRequired 'Confirm the ETL can be read locally, then retry with -ConvertEtl or scrub pre-converted event XML text.'))
+                    $converted = $null
+                    continue
+                }
             }
             if ($converted) { $newTargets += $converted; $intermediateTargets += $converted } else { $newTargets += $t }
         }
         $targets = @($newTargets)
-        if ($targets.Count -eq 0) { throw "No inputs left to scrub after conversion." }
+        if ($targets.Count -eq 0) {
+            $etlSkipCount = @($skippedFiles.ToArray() | Where-Object { [string]$_.reason -eq 'ETL conversion not requested' }).Count
+            if ($etlSkipCount -gt 0) {
+                Write-Warn "No files were scrubbed because all remaining inputs required ETL conversion and -ConvertEtl was not supplied."
+                return [pscustomobject]@{ Clean = $true; ScrubbedFiles = 0; SkippedFiles = @($skippedFiles.ToArray()); Reason = 'ETL conversion not requested' }
+            }
+            throw "No inputs left to scrub after conversion."
+        }
     }
 
     # --- Salt (prompt securely if still unknown) ---
@@ -11093,11 +13137,12 @@ function Invoke-UniversalScrubber {
         $anyJson  = @($targets | Where-Object { $_.Extension -imatch '^\.(json|ndjson|jsonl)$' }).Count -gt 0
         $anyTsv   = @($targets | Where-Object { $_.Extension -ieq '.tsv' }).Count -gt 0
         if ($iisConverted) { $suggest = 'IIS' }
+        elseif ($evtxConverted) { $suggest = 'WindowsEventXml' }
         elseif ($firstCsv) {
             try {
                 $hdr = (Get-Content -Path $firstCsv.FullName -TotalCount 1 -ErrorAction SilentlyContinue)
                 if ($hdr -match 'RequestID|CertificateTemplate|ESC\d|PkiObjectType|StrongCertificateBindingEnforcement') { $suggest = 'CA' }
-                elseif ($evtxConverted -or ($hdr -match 'ProviderName|LevelDisplayName|RecordId')) { $suggest = 'WindowsEventCsv' }
+                elseif ($evtxConverted) { $suggest = 'WindowsEventXml' }
             } catch { }
         }
         elseif ($anyJson) { $suggest = 'Generic' }
@@ -11722,13 +13767,15 @@ function Add-UlsOpenSshIdentifier {
     if ($Seen.ContainsKey($norm)) { return }
     $Seen[$norm] = $true
 
+    $detectedLength = if ($Length -gt 0) { $Length } else { $v.Length }
+
     [void]$List.Add([pscustomobject]@{
         Raw      = $v
         Prefix   = $p
         Detector = $Detector
         Reason   = $Reason
         Index    = $Index
-        Length   = $(if ($Length -gt 0) { $Length } else { $v.Length })
+        Length   = $detectedLength
     })
 }
 
@@ -12579,68 +14626,6 @@ function Find-UlsConnectionHostIdentifiers {
     return @($out.ToArray())
 }
 
-function Find-UlsWindowsEventCsvTextIdentifiersFast {
-    param([Parameter(Mandatory)][string]$Text)
-
-    $out = New-Object System.Collections.Generic.List[object]
-    $seen = @{}
-    if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
-
-    function _AddFastWindowsEventId {
-        param([string]$Raw, [string]$Prefix, [string]$Detector, [string]$Reason)
-        if ([string]::IsNullOrWhiteSpace($Raw) -or [string]::IsNullOrWhiteSpace($Prefix)) { return }
-        $v = ([string]$Raw).Trim().Trim('"', "'", '.', ',', ';', ':', '}', ']', ')')
-        if ([string]::IsNullOrWhiteSpace($v)) { return }
-        if ((Is-AlreadyToken -Value $v) -or (Test-ScrubAllowlist -Value $v)) { return }
-        if (Test-PreserveDetectedValue -Value $v -Detector $Detector -Prefix $Prefix -Text $Reason -Index 0 -Length $v.Length) { return }
-        $norm = Normalize-TokenKey -Value $v
-        if (-not $norm -or $seen.ContainsKey($norm)) { return }
-        $seen[$norm] = $true
-        [void]$out.Add([pscustomobject]@{ Raw = $v; Prefix = $Prefix; Detector = $Detector; Reason = $Reason })
-    }
-
-    foreach ($m in [regex]::Matches($Text, '(?m)^(?:"[^"]*",){6}"(?<machine>[^"]+)"')) {
-        _AddFastWindowsEventId -Raw $m.Groups['machine'].Value -Prefix 'COMPUTER' -Detector 'WindowsEventCsvColumn' -Reason 'MachineName'
-    }
-    foreach ($m in [regex]::Matches($Text, '(?m)^(?:"[^"]*",){7}"(?<userid>S-1-\d+(?:-\d+)*)"')) {
-        _AddFastWindowsEventId -Raw $m.Groups['userid'].Value -Prefix 'SID' -Detector 'WindowsEventCsvColumn' -Reason 'UserId'
-    }
-    foreach ($m in [regex]::Matches($Text, '""(?<key>EventData_[^""]+)""\s*:\s*""(?<value>[^""]*)""')) {
-        $key = $m.Groups['key'].Value
-        $value = $m.Groups['value'].Value
-        $prefix = Get-UlsWindowsEventKeyPrefix -KeyName $key -Value $value
-        if ($prefix) { _AddFastWindowsEventId -Raw $value -Prefix $prefix -Detector 'WindowsEventJsonKey' -Reason $key }
-    }
-    foreach ($m in [regex]::Matches($Text, '(?i)\b(?:Security ID|TargetSid|SubjectUserSid)\s*:\s*(?<value>S-1-\d+(?:-\d+)+)')) {
-        _AddFastWindowsEventId -Raw $m.Groups['value'].Value -Prefix 'SID' -Detector 'WindowsEventMessageLabel' -Reason 'Security ID'
-    }
-    foreach ($m in [regex]::Matches($Text, '(?i)\b(?:Account Name|Target User Name|Subject User Name|TargetUserName|SubjectUserName)\s*:\s*(?<value>[^\s,;]+)')) {
-        _AddFastWindowsEventId -Raw $m.Groups['value'].Value -Prefix 'PRINCIPAL' -Detector 'WindowsEventMessageLabel' -Reason 'Account/User Name'
-    }
-    foreach ($m in [regex]::Matches($Text, '(?i)\b(?:Account Domain|Target Domain Name|Subject Domain Name|TargetDomainName|SubjectDomainName|Workstation Name|WorkstationName|Computer Name)\s*:\s*(?<value>[^\s,;]+)')) {
-        _AddFastWindowsEventId -Raw $m.Groups['value'].Value -Prefix 'COMPUTER' -Detector 'WindowsEventMessageLabel' -Reason 'Domain/Workstation'
-    }
-    foreach ($m in [regex]::Matches($Text, '(?i)\b(?:Source Network Address|Client Address|IP Address|IpAddress)\s*:\s*(?<value>[^\s,;]+)')) {
-        $rawIp = $m.Groups['value'].Value
-        $p = if ($rawIp -match ':' -and (Test-UlsValidIpv6Address -Value $rawIp)) { 'IP6' } else { 'IP' }
-        _AddFastWindowsEventId -Raw $rawIp -Prefix $p -Detector 'WindowsEventMessageLabel' -Reason 'Network Address'
-    }
-    foreach ($m in [regex]::Matches($Text, 'S-1-\d+(?:-\d+)+')) {
-        _AddFastWindowsEventId -Raw $m.Value -Prefix 'SID' -Detector 'WindowsEventSid' -Reason 'SID shape'
-    }
-    foreach ($m in [regex]::Matches($Text, '(?<!\d)(?<!\d\.)(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\d)(?!\.\d)')) {
-        _AddFastWindowsEventId -Raw $m.Value -Prefix 'IP' -Detector 'WindowsEventIPv4' -Reason 'IPv4 shape'
-    }
-    foreach ($id in (Find-UlsConnectionHostIdentifiers -Text $Text)) {
-        _AddFastWindowsEventId -Raw ([string]$id.Raw) -Prefix ([string]$id.Prefix) -Detector 'ConnectionHost' -Reason ([string]$id.Reason)
-    }
-    foreach ($id in (Find-SecretIdentifiers -Text $Text)) {
-        _AddFastWindowsEventId -Raw ([string]$id.Raw) -Prefix ([string]$id.Prefix) -Detector 'Secret' -Reason 'Secret pattern'
-    }
-
-    return @($out.ToArray())
-}
-
 function Find-UlsPolicyIdentifiers {
     param([Parameter(Mandatory)][string]$Text)
 
@@ -12648,9 +14633,6 @@ function Find-UlsPolicyIdentifiers {
         return @(Find-UlsWindowsEventXmlTextIdentifiers -Text $Text)
     }
 
-    if ($Text.Length -gt 1MB -and $Text -match 'EventDataJson' -and $Text -match 'ProviderName' -and $Text -match 'MachineName') {
-        return @(Find-UlsWindowsEventCsvTextIdentifiersFast -Text $Text)
-    }
 
     $base = @(& $script:__ULS_FindIdentifiers_BeforePolicyLayer -Text $Text)
     $seen = @{}
@@ -12687,7 +14669,7 @@ Set-Alias -Name Invoke-UniversalLogScrubber -Value Invoke-UniversalScrubber
 Set-Alias -Name Test-ULSLogFormat -Value Test-LogFormat
 
 Export-ModuleMember -Function `
-    Invoke-UniversalScrubber, Test-LogFormat, New-ScrubTokenMap, New-ScrubTokenMapFromAD, `
+    Invoke-UniversalScrubber, Start-UniversalScrubberInteractive, Test-UniversalScrubberProfile, Test-LogFormat, New-ScrubTokenMap, New-ScrubTokenMapFromAD, `
     Import-ScrubTokenMap, Invoke-ScrubFile, Get-ScrubProfile, `
     Invoke-UlsCSharpDiscoveryWorkerShard, Invoke-UlsCSharpDiscoverRangeBatch, Invoke-UlsCSharpScrubFileBatch, `
     ConvertFrom-EvtxToEventXmlText, ConvertFrom-EtlToEventXmlText, ConvertFrom-W3CToCsv, ConvertFrom-XlsxToCsv, ConvertFrom-DocxToText, ConvertFrom-PptxToText, `

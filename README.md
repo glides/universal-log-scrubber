@@ -1,20 +1,24 @@
-# Universal Log Scrubber v1.0.2
+﻿# Universal Log Scrubber v1.1.0
 
 **Share the logs, not the exposure.**
 
-Universal Log Scrubber is a local-first PowerShell module for preparing logs, diagnostic bundles, exports, and evidence files before they are shared with vendors, outside reviewers, support teams, or analysis tools.
+Universal Log Scrubber is a local-first PowerShell module for preparing logs, diagnostic bundles, exports, and evidence files before they are shared with vendors, outside reviewers, support teams, or approved analysis tools.
 
-It replaces sensitive values with deterministic typed tokens while keeping the surrounding log structure readable. This lets reviewers follow events, counts, timelines, users, devices, and relationships without receiving the original identifiers.
+It replaces sensitive values with deterministic typed tokens while keeping the surrounding log structure readable. Reviewers can still follow events, counts, timelines, users, devices, and relationships without receiving the original identifiers.
 
 ## Latest updates
 
-**v1.0.2** is a public maintenance release focused on compatibility and safer high-volume diagnostic workflows.
+**v1.1.0** is the interactive workflow release.
 
-- Improved Windows PowerShell 5.1 compatibility while retaining PowerShell 7 support.
-- Improved Windows Event log readability by preserving common built-in Windows groups, setup/OOBE placeholder accounts, and known Windows driver/service names.
-- Improved correlation for repeated users, devices, hostnames, SIDs, MAC addresses, and cloud/device identifiers across converted event text and large diagnostic bundles.
-- Improved map-based scrubbing consistency for large converted event outputs and diagnostic packages.
-- Added status timestamps to console progress messages for easier review of long-running jobs.
+- Added the default interactive command console. Running `Invoke-UniversalScrubber` with no arguments now opens the ULS console.
+- Added `-Interactive`, `-Help`, and improved `-Version` output.
+- Added interactive commands for `help`, `profile`, `validate`, `set`, `plan`, `scrub`, `last`, `version`, `doctor`, `examples`, and `exit`.
+- Added session defaults so operators can set `path`, `workdir`, `profile`, `saltfile`, `recurse`, and other options once, then preview or run jobs.
+- Added safe command previews with `plan`. Literal salts are hidden and represented as `$global:UlsInteractiveSalt` instead of being printed in the console.
+- Made `Auto` the interactive default. Auto does not force a single profile; it lets the existing format-aware workflow handle mixed inputs unless the operator explicitly sets a profile.
+- Added BYOP profile inspection and validation from the interactive console with `profile .\path\to\profile.json` and `validate profile .\path\to\profile.json`.
+- Improved ETL handling so `.etl` files are skipped with clear guidance unless `-ConvertEtl` is supplied.
+- Updated Windows Event wording to the current converted event XML text workflow.
 
 ## What it helps protect
 
@@ -44,18 +48,46 @@ Supported workflows include CSV, TSV, PSV, JSON, JSONL/NDJSON, key-value logs, f
 
 ## Quick start
 
+Import the module and start the interactive console:
+
 ```powershell
 Import-Module .\UniversalLogScrubber\UniversalLogScrubber.psd1 -Force
+Invoke-UniversalScrubber
+```
 
+Useful interactive commands:
+
+```text
+help
+set path ".\samples\logs"
+set workdir ".\samples\out\quickstart"
+set saltfile ".\salt.txt"
+set recurse true
+validate profile
+plan
+scrub
+last
+exit
+```
+
+Scripted runs still work normally:
+
+```powershell
 Invoke-UniversalScrubber `
   -Path .\samples\logs `
   -WorkDir .\samples\out\quickstart `
-  -Profile Generic `
-  -Recurse `
   -MapSource Discover `
   -TokenMapMode Replace `
   -SaltFile .\salt.txt `
+  -Recurse `
   -NonInteractive
+```
+
+Validate built-in or BYOP profiles before a run:
+
+```powershell
+Test-UniversalScrubberProfile -Profile Generic
+Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Detailed
 ```
 
 For Intune diagnostic bundles:
@@ -75,12 +107,13 @@ For Intune diagnostic bundles:
 
 ## Recommended workflow
 
-1. Run `-RecommendOnly`, `-SafeFirstRun`, or `-DryRun` first.
-2. Choose a built-in profile or a BYOP profile.
-3. Build a fresh token map with `-MapSource Discover` and `-TokenMapMode Replace`, or reuse a trusted existing map with `-MapSource ExistingMap`.
-4. Scrub into a local work directory.
-5. Review skipped files, failed files, and representative scrubbed output.
-6. Upload only reviewed scrubbed files or a reviewed safe bundle.
+1. Run the interactive console with `Invoke-UniversalScrubber`, or run `-RecommendOnly`, `-SafeFirstRun`, or `-DryRun` first.
+2. Use the default Auto behavior for mixed folders, or choose a built-in profile when the source is known.
+3. Use a BYOP `-ProfileFile` or profile extension when local fields, asset patterns, tenant aliases, or vendor-specific labels need extra handling.
+4. Build a fresh token map with `-MapSource Discover` and `-TokenMapMode Replace`, or reuse a trusted existing map with `-MapSource ExistingMap`.
+5. Scrub into a local work directory.
+6. Review skipped files, failed files, and representative scrubbed output.
+7. Upload only reviewed scrubbed files or a reviewed safe bundle.
 
 ## Important files
 
@@ -95,12 +128,12 @@ For Intune diagnostic bundles:
 
 ## Profiles and tuning
 
-Start with `Generic` when unsure. Use source-specific profiles such as `IntuneDiagnostics`, `ServiceNow`, `Nexthink`, `SccmText`, `Firewall`, `CloudAudit`, `IdentityProvider`, `Edr`, `Kubernetes`, or `Database` when the log source is known. Native Windows Event files are converted locally to event-text output and scrubbed as part of that workflow.
+The interactive default is `Auto`, which means no single profile is forced. This is useful for mixed folders because the scrubber can use format-aware defaults and special conversion workflows. Use source-specific profiles such as `IntuneDiagnostics`, `WindowsEventXml`, `ServiceNow`, `Nexthink`, `SccmText`, `Firewall`, `CloudAudit`, `IdentityProvider`, `Edr`, `Kubernetes`, or `Database` when the log source is known.
 
-Use BYOP profiles or profile extensions when your environment has local field names, asset patterns, tenant aliases, project names, or vendor-specific labels that generic detection cannot safely infer.
+Native Windows Event files are converted locally to event XML text and scrubbed as part of that workflow. BYOP profiles and profile extensions are available when your environment has local field names, asset patterns, tenant aliases, project names, or vendor-specific labels that generic detection cannot safely infer.
 
 ## Safety notes
 
 Universal Log Scrubber is a defensive safe-sharing aid, not a formal anonymization guarantee. Review output before anything leaves the secure environment.
 
-Never upload salts, token maps, raw logs, converted intermediates, detailed detection reports, profile-build reports, or files marked `DO_NOT_UPLOAD`.
+Never upload salts, token maps, raw logs, converted intermediates, detailed detection reports, profile-build reports, run manifests unless approved, or files marked `DO_NOT_UPLOAD`.

@@ -1,4 +1,4 @@
-# BYOP profile examples
+﻿# BYOP profile examples
 
 Universal Log Scrubber supports two profile patterns:
 
@@ -35,6 +35,28 @@ Use these examples as starting points. Tune them with dry runs before using them
 | `examples/webaccess-query-token-extension.json` | Extension | `WebAccess`, `Apache`, `IIS` | Query-string secrets and URL-encoded identities. |
 | `examples/database-audit-profile.json` | Full profile | `-ProfileFile` or compare with `Database` | SQL/PostgreSQL-style audit rows. |
 | `examples/strict-workstation-paths-extension.json` | Extension | `Text`, `IntuneDiagnostics`, `SccmText`, event-text workflows | Stricter workstation, UNC, profile path, and local script-output handling. |
+
+## Interactive profile inspection
+
+In v1.1.0, the interactive console can inspect built-in profiles and BYOP profile files before you run a job:
+
+```text
+profile
+profile SccmText
+profile .\docs\profiles\kv-log-profile.json
+validate profile .\docs\profiles\kv-log-profile.json
+set profilefile .\docs\profiles\kv-log-profile.json
+plan
+```
+
+This is useful when validating local profile files in secure environments without opening a separate editor or running a full scrub job.
+
+For scripted validation or CI, use:
+
+```powershell
+Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Detailed
+Test-UniversalScrubberProfile -ProfileFile .\docs\profiles\kv-log-profile.json -Quiet
+```
 
 ## Example commands
 

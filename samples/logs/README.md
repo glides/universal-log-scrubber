@@ -1,4 +1,4 @@
-# Synthetic sample logs
+﻿# Synthetic sample logs
 
 These files are fictional but shaped after common enterprise log exports. They are intentionally not trivial: many entries include nested JSON, values embedded in messages, URLs with query-string identities, Windows paths, account IDs, GUIDs, SIDs, MACs, private IPs, public documentation domains, and product/version noise.
 
@@ -28,9 +28,9 @@ These files are fictional but shaped after common enterprise log exports. They a
 | `sccm_cmtrace_client.log` | sample | `SccmText` + `docs/profiles/endpoint-management-extension.json` | CMTrace-style client log lines. |
 | `sentinel_incidents_alerts.jsonl` | sample | `CloudAudit`, `Edr`, or `docs/profiles/security-audit-extension.json` | Incident/alert records with users, hosts, entities, and investigation fields. |
 | `servicenow_incidents.csv` | sample | `ServiceNow` + `docs/profiles/servicenow-local-extension.json` | ServiceNow incident/task export shape. |
-| `sysmon-event-xml.txt` | sample | `Text`, `IntuneDiagnostics`, or strict workstation extension depending on workflow | Sysmon event XML-text style records with process, network, DNS, path, SID, and command-line data. |
+| `sysmon-event-xml.txt` | sample | `WindowsEventXml`, `Text`, `IntuneDiagnostics`, or strict workstation extension depending on workflow | Sysmon event XML-text style records with process, network, DNS, path, SID, and command-line data. |
 | `vpn-firewall.log` | sample | `Firewall` or `Vpn` | VPN/firewall text log examples. |
 | `web-access.log` | sample | `WebAccess` | Web access log examples. |
-| `windows-event-sample.csv` | sample | `Generic` or a BYOP profile if you still receive event data as a table | Legacy event-table sample rows. Native event files are usually converted locally to `.events.txt` before scrub. |
+| `windows-event-sample.csv` | sample | `Generic` or a BYOP profile if you still receive event data as a table | Legacy event-table sample rows. Native event files are usually converted locally to event XML `.events.txt` before scrub. |
 
 All values are synthetic. Do not reuse these salts, IDs, or token-looking strings in production.
